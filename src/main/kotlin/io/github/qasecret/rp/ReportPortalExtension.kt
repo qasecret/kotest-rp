@@ -78,7 +78,6 @@ class ReportPortalExtension : TestListener, ProjectListener {
             startTime = currentTime
             mode = reportPortal.parameters.launchRunningMode
             attributes = reportPortal.parameters.attributes
-            description = "Test execution for ${reportPortal.parameters.projectName}"
         }
 
         retryOnFailure(DEFAULT_RETRY_ATTEMPTS) {
