@@ -44,11 +44,8 @@ dependencies {
 }
 mavenPublishing {
     publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
-
     signAllPublications()
-
     coordinates(group.toString(), "kotest-rp", version.toString())
-
     pom {
         name = "ReportPortal extension for kotest"
         description = "Provides extension to integrate with report portal"
