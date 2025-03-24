@@ -24,7 +24,7 @@ To integrate ReportPortal with Kotest, first, add the necessary dependencies in 
 
 ```kotlin
 dependencies {
-    implementation("io.github.qa-secret:kotest-rp:<version>")
+    implementation("io.github.qasecret:kotest-rp:<version>")
 }
 ```
 
