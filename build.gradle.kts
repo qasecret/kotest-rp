@@ -44,8 +44,11 @@ dependencies {
 }
 mavenPublishing {
     publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
+
     signAllPublications()
+
     coordinates(group.toString(), "kotest-rp", version.toString())
+
     pom {
         name = "ReportPortal extension for kotest"
         description = "Provides extension to integrate with report portal"
@@ -68,7 +71,7 @@ mavenPublishing {
         scm {
             url = "https://github.com/qasecret/kotest-rp"
             connection = "scm:git:git://github.com/qasecret/kotest-rp.git"
-            developerConnection = "scm:git:ssh://git@github.com/kotlin-hands-on/kotest-rp.git"
+            developerConnection = "scm:git:ssh://git@github.com/qasecret/kotest-rp.git"
         }
     }
 }
