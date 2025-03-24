@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "io.github.qasecret"
-version = "1.0-SNAPSHOT"
+version = "1.0.0"
 
 repositories {
     mavenCentral()
