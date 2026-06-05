@@ -6,7 +6,16 @@ plugins {
 }
 
 group = "io.github.qasecret"
-version = "1.0.3"
+// Release version is derived automatically from the Git tag on CI (e.g. tag `v1.1.0` -> `1.1.0`),
+// or from an explicit VERSION env var (manual workflow_dispatch). Local/dev builds use -SNAPSHOT.
+version = run {
+    val explicit = System.getenv("VERSION")?.takeIf { it.isNotBlank() }
+    val fromTag = System.getenv("GITHUB_REF")
+        ?.takeIf { it.startsWith("refs/tags/") }
+        ?.substringAfterLast('/')
+        ?.removePrefix("v")
+    explicit ?: fromTag ?: "1.1.0-SNAPSHOT"
+}
 
 repositories {
     mavenCentral()

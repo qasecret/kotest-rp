@@ -1,8 +1,18 @@
-
 name: Publish
+
+# Automatic release: pushing a version tag (e.g. v1.1.0) builds, signs and releases that version to
+# Maven Central. The version is taken from the tag. A manual run (workflow_dispatch) can publish an
+# explicit version instead.
 on:
-  release:
-    types: [released, prereleased]
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g. 1.1.0)'
+        required: true
+
 jobs:
   publish:
     name: Release build and publish
@@ -15,9 +25,11 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: 21
-      - name: Publish to MavenCentral
-        run: ./gradlew publishToMavenCentral --no-configuration-cache
+      - name: Publish and release to Maven Central
+        run: ./gradlew publishAndReleaseToMavenCentral --no-configuration-cache
         env:
+          # Empty on tag pushes (version then comes from the tag via GITHUB_REF); set on manual runs.
+          VERSION: ${{ github.event.inputs.version }}
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}

@@ -200,6 +200,24 @@ They are disabled by default and require a `reportportal.properties` on the test
 > Keep your real `reportportal.properties` out of version control — it holds your API key. This repo
 > gitignores it and ships `reportportal.properties.example` as a template.
 
+## Releasing
+
+Publishing to Maven Central is **automatic and tag-driven** — no manual version edits and no manual
+Central Portal step:
+
+1. Push a version tag, e.g.:
+   ```bash
+   git tag v1.1.0 && git push origin v1.1.0
+   ```
+2. The `Publish` workflow builds, signs, uploads, **and releases** that version
+   (`publishAndReleaseToMavenCentral`). The version is taken from the tag (`v1.1.0` → `1.1.0`); local
+   and non-tag builds use a `-SNAPSHOT` version.
+
+You can also trigger it manually (Actions → *Publish* → *Run workflow*) with an explicit version.
+
+Requires these repository secrets: `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`,
+`SIGNING_KEY_ID`, `SIGNING_PASSWORD`, `GPG_KEY_CONTENTS`.
+
 ## License
 
 Apache License 2.0.
