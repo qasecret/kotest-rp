@@ -13,34 +13,27 @@ repositories {
 }
 
 val kotestVersion: String by project
-val opentest4jVersion: String by project
-val allureVersion: String by project
-val slf4jVersion: String by project
-
 
 dependencies {
-    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
-    implementation("org.jetbrains.kotlin:kotlin-reflect")
-
-
-    implementation("io.kotest:kotest-framework-api:$kotestVersion") {
-        exclude(group = "org.jetbrains.kotlin")
-    }
-    implementation("io.kotest:kotest-framework-engine-jvm:$kotestVersion") {
-        exclude(group = "org.jetbrains.kotlin")
-    }
-    testImplementation("io.kotest:kotest-property:$kotestVersion")
-    testImplementation("io.kotest:kotest-framework-datatest:$kotestVersion")
-    testImplementation("io.kotest:kotest-runner-junit5-jvm:$kotestVersion") {
-        exclude(group = "org.jetbrains.kotlin")
-        exclude(group = "io.mockk")
-    }
+    // ReportPortal client + SLF4J API are the only runtime dependencies. The library binds to
+    // slf4j-api and deliberately does NOT ship a logging backend, so consumers keep control of
+    // their own (logback, log4j2, etc.) without classpath conflicts.
     implementation("com.epam.reportportal:client-java:5.2.23")
     implementation("org.slf4j:slf4j-api:2.0.16")
-    implementation("ch.qos.logback:logback-classic:1.5.15")
-    implementation("ch.qos.logback:logback-core:1.5.13")
-    implementation("org.testng:testng:7.9.0")
-    implementation("com.epam.reportportal:logger-java-logback:5.2.2")
+
+    // Kotest is provided by the consumer (this is a Kotest extension); compile against it only.
+    compileOnly("io.kotest:kotest-framework-api:$kotestVersion")
+    compileOnly("io.kotest:kotest-framework-engine-jvm:$kotestVersion")
+
+    // Tests run the real Kotest engine and assert against a recording ReportPortal client.
+    testImplementation("io.kotest:kotest-framework-api:$kotestVersion")
+    testImplementation("io.kotest:kotest-framework-engine-jvm:$kotestVersion")
+    testImplementation("io.kotest:kotest-assertions-core:$kotestVersion")
+    testImplementation("io.kotest:kotest-runner-junit5-jvm:$kotestVersion")
+    // Needed only to implement the ReportPortalClient.log(List<MultipartBody.Part>) member in the
+    // recording test fake; the type comes transitively from client-java at runtime.
+    testImplementation("com.squareup.okhttp3:okhttp:4.12.0")
+    testRuntimeOnly("ch.qos.logback:logback-classic:1.5.15")
 }
 mavenPublishing {
     publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
@@ -76,8 +69,20 @@ mavenPublishing {
     }
 }
 
+tasks.processResources {
+    // Bake the library version into kotest-rp.properties (read at runtime by RpAgent).
+    filesMatching("kotest-rp.properties") {
+        expand(mapOf("version" to project.version.toString()))
+    }
+}
+
 tasks.test {
     useJUnitPlatform()
+    // Forward rp.* system properties (e.g. rp.live, rp.shard.*) to the forked test JVM so the
+    // opt-in live ReportPortal smoke tests can be driven from the Gradle command line.
+    System.getProperties().forEach { (k, v) ->
+        if (k is String && k.startsWith("rp.")) systemProperty(k, v.toString())
+    }
 }
 kotlin {
     jvmToolchain(17)
