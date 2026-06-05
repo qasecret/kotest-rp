@@ -1,57 +1,124 @@
-# kotest-rp — ReportPortal extension for Kotest
+<div align="center">
 
-`kotest-rp` reports [Kotest](https://kotest.io) test runs to [ReportPortal](https://reportportal.io).
-Register one extension and your launches, specs, tests, statuses, logs, and attachments show up in
-ReportPortal with a faithful, nested structure.
+# kotest-rp
 
-## Features
+**Report your [Kotest](https://kotest.io) runs to [ReportPortal](https://reportportal.io) — one line of setup, a faithful test tree, and your existing logs flowing straight into each test.**
 
-- **Faithful tree** — each spec is a `SUITE`, containers nest as `SUITE`s, leaf tests are `STEP`s
-  (configurable), at any depth.
-- **All Kotest spec styles** — Fun, String, Should, Describe, Behavior, Word, Feature, Expect, Free,
-  and Annotation specs, with their natural affixes (`Given:`/`Describe:`/`Feature:` …) preserved.
-- **Accurate statuses** — passed / failed / skipped; ignored & disabled tests are reported too.
-- **Rich failures** — stacktrace attached as an error log, plus a configurable ReportPortal defect type.
-- **Attributes & metadata** — Kotest tags (incl. `key:value`), test severity, and invocation counts.
-- **Logs & attachments** — attach logs and files (screenshots, payloads) to the running test.
-- **Flaky detection** — per-invocation markers for multi-invocation tests.
-- **CI-ready** — rerun mode and distributed launches (client-join or external launch UUID).
-- **Safe by design** — depends only on the ReportPortal client + `slf4j-api` (no logging backend
-  forced on you); all reporting is non-fatal, so it never breaks your build.
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.qasecret/kotest-rp?style=flat-square&logo=apachemaven&color=blue)](https://central.sonatype.com/artifact/io.github.qasecret/kotest-rp)
+[![Build](https://img.shields.io/github/actions/workflow/status/qasecret/kotest-rp/build.yml?branch=main&style=flat-square&logo=github)](https://github.com/qasecret/kotest-rp/actions/workflows/build.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green?style=flat-square)](LICENSE)
+[![Kotlin](https://img.shields.io/badge/Kotlin-JVM-7F52FF?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org)
+[![Kotest](https://img.shields.io/badge/Kotest-5.9.x-4DB33D?style=flat-square)](https://kotest.io)
 
-## Requirements
+</div>
 
-- Kotest **5.9.x**
-- A reachable ReportPortal instance (self-hosted or cloud) and an API key.
+---
 
-## Installation
+`kotest-rp` is a tiny, focused Kotest extension. Register it once and your **launches, specs, tests,
+statuses, attributes, failures, logs, and attachments** appear in ReportPortal with a structure that
+mirrors your specs exactly — at any nesting depth, for every Kotest spec style.
 
-The extension is a test-time dependency:
+```kotlin
+class ProjectConfig : AbstractProjectConfig() {
+    override fun extensions() = listOf(ReportPortalExtension())
+}
+```
+
+That's the whole integration. Connection settings come from a `reportportal.properties` file or
+`rp.*` env vars — no code changes to wire up CI, and reporting is **non-fatal**, so a flaky
+ReportPortal server can never break your build.
+
+## Table of contents
+
+- [Why kotest-rp](#why-kotest-rp)
+- [Install](#install)
+- [Quick start](#quick-start)
+- [What it reports](#what-it-reports)
+- [Logging: get your existing logs into ReportPortal](#logging-get-your-existing-logs-into-reportportal)
+- [Attributes & metadata](#attributes--metadata)
+- [Failures & defect types](#failures--defect-types)
+- [Configuration reference](#configuration-reference)
+- [CI: reruns & distributed launches](#ci-reruns--distributed-launches)
+- [Troubleshooting](#troubleshooting)
+- [Compatibility](#compatibility)
+- [Contributing & building](#contributing--building)
+- [License](#license)
+
+## Why kotest-rp
+
+| | |
+|---|---|
+| 🌳 **Faithful tree** | Specs and containers become `SUITE`s, leaf tests become `STEP`s (or `TEST`s) — at any depth, for Fun/String/Should/Describe/Behavior/Word/Feature/Expect/Free/Annotation specs, with their natural `Given:`/`Describe:`/`Feature:` affixes preserved. |
+| 🪵 **Logs that just work** | Drop in the bundled logback appender and your ordinary `log.info(...)` calls attach to the right test — **correctly even under concurrent tests and coroutine thread‑hops**. No `ReportPortal`‑specific code in your tests. |
+| 🎯 **Accurate statuses** | Passed / failed / skipped; ignored & disabled tests are reported too. Failures carry the stacktrace and a configurable defect type. |
+| 🏷️ **Rich metadata** | Kotest tags (incl. `key:value`), severity, invocation counts, and spec `@Tags` → ReportPortal attributes. |
+| 📎 **Attachments** | Send screenshots, payloads, and files to the running test from inside the test body. |
+| 🧩 **CI‑ready** | Rerun mode and distributed launches (client‑join or external launch UUID) for sharded pipelines. |
+| 🪶 **Lightweight & safe** | Depends only on the ReportPortal client + `slf4j-api` — **no logging backend forced on you**. Every reporting call is guarded; failures are logged and swallowed. |
+
+## Install
+
+`kotest-rp` is a **test-time** dependency. Use the latest version from the badge above.
+
+<details open>
+<summary><b>Gradle (Kotlin DSL)</b></summary>
 
 ```kotlin
 dependencies {
     testImplementation("io.github.qasecret:kotest-rp:<version>")
+    // Already have these if you use Kotest; shown for completeness:
+    testImplementation("io.kotest:kotest-runner-junit5:5.9.1")
+    // Pick any SLF4J backend (kotest-rp ships none):
+    testRuntimeOnly("ch.qos.logback:logback-classic:1.5.6")
 }
 ```
+</details>
 
-Replace `<version>` with the latest on Maven Central. The published artifact pulls in only
-`com.epam.reportportal:client-java` and `org.slf4j:slf4j-api` — pick your own SLF4J backend.
+<details>
+<summary><b>Gradle (Groovy DSL)</b></summary>
+
+```groovy
+dependencies {
+    testImplementation 'io.github.qasecret:kotest-rp:<version>'
+    testRuntimeOnly 'ch.qos.logback:logback-classic:1.5.6'
+}
+```
+</details>
+
+<details>
+<summary><b>Maven</b></summary>
+
+```xml
+<dependency>
+  <groupId>io.github.qasecret</groupId>
+  <artifactId>kotest-rp</artifactId>
+  <version>VERSION</version>
+  <scope>test</scope>
+</dependency>
+```
+</details>
+
+The published artifact pulls in only `com.epam.reportportal:client-java` and `org.slf4j:slf4j-api` —
+you choose your own SLF4J backend.
 
 ## Quick start
 
 ### 1. Register the extension
 
 ```kotlin
+import io.github.qasecret.rp.ReportPortalExtension
+import io.kotest.core.config.AbstractProjectConfig
+
 class ProjectConfig : AbstractProjectConfig() {
-    override fun extensions(): List<Extension> = listOf(ReportPortalExtension())
+    override fun extensions() = listOf(ReportPortalExtension())
 }
 ```
 
 ### 2. Provide connection settings
 
 The no-arg `ReportPortalExtension()` reads the standard ReportPortal configuration — a
-`reportportal.properties` on the (test) classpath and/or `rp.*` system properties / environment
-variables:
+`reportportal.properties` on the test classpath (`src/test/resources/`) and/or `rp.*` system
+properties / environment variables:
 
 ```properties
 rp.endpoint = https://your-reportportal-instance
@@ -61,72 +128,129 @@ rp.launch   = Kotest Launch
 # rp.enable = false   # turn reporting off without removing the extension
 ```
 
-That's it — run your tests and a launch appears in ReportPortal.
+> 🔒 Keep real credentials out of version control. Commit a `reportportal.properties.example` and
+> inject the real `rp.api.key` via an env var / CI secret.
 
-## Reporting structure
+### 3. Run your tests
 
-```
-Launch
- └─ com.acme.LoginSpec            (SUITE)
-     ├─ "logs in"                 (STEP)
-     └─ Describe: validation      (SUITE)     # nested container
-         └─ "rejects empty input" (STEP)
+```bash
+./gradlew test
 ```
 
-- **Spec** → `SUITE` directly under the launch (set `syntheticRootSuite = true` to nest everything
-  under one root suite instead).
-- **Container test** (`context`/`describe`/`given`/`when`/`feature`/…) → `SUITE`.
-- **Leaf test** → `STEP` (or `TEST`, see `leafItemType`).
-- **Ignored / disabled** test → `SKIPPED`.
-- **Failure** → `FAILED` with the stacktrace as an `ERROR` log and a defect type (To Investigate by
-  default).
+A launch appears in ReportPortal with your full spec tree. Done.
 
-## Attributes & metadata
+## What it reports
 
-- **Tags** → attributes. A tag written `key:value` (e.g. `NamedTag("team:payments")`) becomes a
-  keyed attribute; a plain tag becomes a value-only attribute. Spec-level `@Tags(...)` become `tag`
-  attributes on the spec.
-- **Severity** (`config(severity = ...)`) → `severity=<LEVEL>` attribute.
-- **Invocations** (`config(invocations = N)`) → `invocations=N` attribute (see *Flaky detection*).
-- Each **launch** is tagged with `agent` (`kotest-rp|<version>`), `os`, and `jvm` attributes.
+```
+Launch                                   (beforeProject)
+ └─ com.acme.LoginSpec        (SUITE)     ← one per spec class
+     ├─ "logs in"             (STEP)      ← leaf test
+     └─ Describe: validation  (SUITE)     ← nested container
+         └─ "rejects empty"   (STEP)
+```
 
-## Logs & attachments
+| Kotest concept | ReportPortal item |
+|---|---|
+| Spec class | `SUITE` (directly under the launch, or under a synthetic root — see `syntheticRootSuite`) |
+| Container (`context`/`describe`/`given`/`when`/`feature`/…) | `SUITE` |
+| Leaf test | `STEP` (or `TEST` via `leafItemType`) |
+| Ignored / disabled test | `SKIPPED` |
+| Failed test | `FAILED` + stacktrace as an `ERROR` log + a defect type |
 
-Attach logs and files to the currently running test from inside the test body:
+Every **launch** is also tagged with `agent` (`kotest-rp|<version>`), `os`, and `jvm` attributes.
+
+## Logging: get your existing logs into ReportPortal
+
+There are two complementary ways to attach logs to a test. **Most projects only need the first.**
+
+### A. Automatic — your normal SLF4J/logback logs (recommended)
+
+> _Requires kotest-rp **≥ 1.2.0**._
+
+Register the bundled appender in `src/test/resources/logback-test.xml`:
+
+```xml
+<configuration>
+  <appender name="REPORTPORTAL" class="io.github.qasecret.rp.logback.ReportPortalLogbackAppender"/>
+
+  <root level="INFO">
+    <appender-ref ref="REPORTPORTAL"/>
+    <!-- keep your console appender too, if you like -->
+  </root>
+</configuration>
+```
+
+Now your everyday logging flows straight into the matching ReportPortal test — **no changes to your
+test code**:
+
+```kotlin
+private val log = LoggerFactory.getLogger(MySpec::class.java)
+
+class MySpec : BehaviorSpec({
+    Given("a user") {
+        log.info("seeding the database")          // attaches to the "Given" suite
+        When("they log in") {
+            Then("a token is issued") {
+                log.info("calling /auth")          // attaches to this test step
+                log.error("upstream timed out", ex) // ERROR + full stacktrace
+            }
+        }
+    }
+})
+```
+
+Attribution is **concurrency- and thread-hop-safe**: each test's item key rides its coroutine via
+SLF4J `MDC`, so logs land on the right test even with `concurrency > 1` or
+`withContext(Dispatchers.IO)`. (`DEBUG` lines appear only if your root/logger level allows them.)
+
+> **Using log4j2 or another backend?** kotest-rp publishes the current test's item key to SLF4J `MDC`
+> under [`RpMdc.ITEM_KEY`](src/main/kotlin/io/github/qasecret/rp/RpMdc.kt). Write a small appender that
+> forwards each event to `ReportPortalLogs.log(level, message)` (it reads the same key), or read the
+> MDC value yourself.
+
+### B. Explicit API — logs & file attachments from a test body
+
+Use [`ReportPortalLogs`](src/main/kotlin/io/github/qasecret/rp/ReportPortalLogs.kt) when you want to
+attach **files** (screenshots, payloads) or log explicitly:
 
 ```kotlin
 test("uploads a screenshot on the login page") {
     ReportPortalLogs.info("navigating to the login page")
     ReportPortalLogs.attach(File("build/screenshots/login.png"), message = "login page")
-    // or from raw bytes:
-    ReportPortalLogs.attach("payload.json", responseBytes, "application/json")
+    ReportPortalLogs.attach("payload.json", responseBytes, "application/json")   // raw bytes
     ReportPortalLogs.warn("done")
 }
 ```
 
-Available calls: `info` / `warn` / `error` / `debug` / `log(level, message)`, and `attach(...)` for a
-`File` or raw bytes. Logs bind to the running test's item. The API is best-effort and non-fatal: if a
-custom multi-threaded dispatcher moved execution off the test's thread, the call is a no-op.
+Calls: `info` / `warn` / `error` / `debug` / `log(level, message)`, plus `attach(...)` for a `File` or
+raw bytes. Like the appender, these resolve to the running test via the MDC item key (so they work
+under concurrency); logging entirely outside a running test is a safe no-op.
 
-## Flaky detection (invocations)
+## Attributes & metadata
 
-Run a test several times to surface flakiness:
+- **Tags → attributes.** `NamedTag("team:payments")` (a `key:value` tag) becomes a keyed attribute;
+  a plain tag becomes value-only. Spec-level `@Tags(...)` become `tag` attributes on the spec.
+- **Severity** — `.config(severity = TestCaseSeverityLevel.CRITICAL)` → `severity=CRITICAL`.
+- **Invocations** — `.config(invocations = 5)` → an `invocations=5` attribute and an `Invocation k of 5`
+  marker per run, so you can see how many repetitions completed before a flaky failure.
 
 ```kotlin
-test("sometimes flaky").config(invocations = 5) { /* ... */ }
+Then("checkout succeeds")
+    .config(
+        tags = setOf(NamedTag("team:payments"), NamedTag("smoke")),
+        severity = TestCaseSeverityLevel.CRITICAL,
+        invocations = 3,
+    ) { /* ... */ }
 ```
 
-The test gets an `invocations=5` attribute and an `Invocation k of 5` log marker per run, so you can
-see how many repetitions completed before a flaky failure.
-
-> Kotest 5.9 doesn't expose per-invocation results to extensions, so these are markers, not
-> ReportPortal *retry groups*. Full retry grouping is planned alongside Kotest 6 support.
+> Kotest 5.9 doesn't expose per-invocation results to extensions, so invocations produce **markers**,
+> not ReportPortal *retry groups*. Full retry grouping is planned alongside Kotest 6 support.
 
 ## Failures & defect types
 
 Failures are marked `FAILED`, get the stacktrace as an `ERROR` log, and are assigned a ReportPortal
-defect type. Customize which defect via `RpConfig` (see below) — for example, map assertion failures
-to a product bug and exceptions to an automation bug:
+defect type (**To Investigate** by default). Customize per failure — e.g. assertion failures →
+*Product Bug*, exceptions → *Automation Bug*:
 
 ```kotlin
 RpConfig(
@@ -140,12 +264,15 @@ RpConfig(
 `AUTOMATION_BUG` (`ab`), `SYSTEM_ISSUE` (`si`), `NO_DEFECT` (`nd`). Any custom project locator string
 works too.
 
-## Configuration
+> ReportPortal renders defects on **STEP** leaves. If you set `leafItemType = TEST`, defect badges
+> won't appear on those leaves — keep `STEP` (the default) when you rely on defect typing.
 
-Pass an `RpConfig` to the extension:
+## Configuration reference
+
+Pass an [`RpConfig`](src/main/kotlin/io/github/qasecret/rp/RpConfig.kt) to the extension:
 
 ```kotlin
-override fun extensions(): List<Extension> = listOf(
+override fun extensions() = listOf(
     ReportPortalExtension(
         RpConfig(
             leafItemType = LeafItemType.STEP,
@@ -166,8 +293,7 @@ override fun extensions(): List<Extension> = listOf(
 | `defectTypeResolver` | `null` | `(TestCase, TestResult) -> String?` — overrides `failureDefectType` per failure (`null` = no defect). |
 | `parameters` | `null` | Programmatic `ListenerParameters`; when `null`, config is read from properties/env. |
 
-You can also inject a pre-built `ReportPortal` instance:
-`ReportPortalExtension(reportPortal, config)`.
+You can also inject a pre-built `ReportPortal` instance: `ReportPortalExtension(reportPortal, config)`.
 
 ## CI: reruns & distributed launches
 
@@ -176,11 +302,30 @@ You can also inject a pre-built `ReportPortal` instance:
 - **Shared launch across parallel shards** — two options:
   - **Client join** — set `rp.client.join=true` on every concurrent shard; the ReportPortal client
     elects one launch and the others join it automatically (no code changes).
-  - **External launch UUID** — have an orchestrator create the launch, pass its UUID to every shard
-    via `rp.launch.uuid=<uuid>`, and let the orchestrator finish it. Each shard reports and flushes
-    its items into the shared launch but never creates or closes it.
+  - **External launch UUID** — have an orchestrator create the launch, pass its UUID to every shard via
+    `rp.launch.uuid=<uuid>`, and let the orchestrator finish it. Each shard reports and flushes its
+    items into the shared launch but never creates or closes it.
 
-## Building & testing
+## Troubleshooting
+
+| Symptom | Likely cause / fix |
+|---|---|
+| **No launch appears** | Check `rp.endpoint`, `rp.api.key`, `rp.project`; ensure `rp.enable` isn't `false`. The extension logs **one** warning and disables itself if it can't start — look for it. |
+| **`ProjectConfig` ignored** | The class must extend `AbstractProjectConfig` and be discoverable on the test classpath (Kotest auto-detects a single one). |
+| **Logs not showing** | Register the `REPORTPORTAL` appender (Section A) **and** make sure the message's level passes your root/logger level (`DEBUG` needs `level="DEBUG"`). |
+| **`DEBUG` lines missing** | Expected — raise the root or a specific logger to `DEBUG` in your logback config. |
+| **Defect badge missing on a leaf** | You set `leafItemType = TEST`; defects render on `STEP` leaves only. |
+| **Container (`Given`/`When`) logs not where you look** | They attach to the **suite** node, not the leaf — open that suite row to see them (this is the faithful-tree trade-off). |
+
+## Compatibility
+
+| | |
+|---|---|
+| **Kotest** | 5.9.x |
+| **JVM** | 17+ |
+| **ReportPortal** | client-java 5.2.x (server v5) |
+
+## Contributing & building
 
 ```bash
 ./gradlew build     # compile + run the offline test suite
@@ -188,36 +333,34 @@ You can also inject a pre-built `ReportPortal` instance:
 ```
 
 The unit/integration tests run fully **offline** against an in-memory recording ReportPortal client —
-no server needed.
-
-There are also opt-in **live** smoke tests (`Live*ReportPortalTest`) that report to a real instance.
-They are disabled by default and require a `reportportal.properties` on the test classpath:
+no server needed. Opt-in **live** smoke tests (`Live*ReportPortalTest`) report to a real instance and
+require a `reportportal.properties` on the test classpath:
 
 ```bash
 ./gradlew test --tests "io.github.qasecret.rp.LiveReportPortalTest" -Drp.live=true
 ```
 
-> Keep your real `reportportal.properties` out of version control — it holds your API key. This repo
-> gitignores it and ships `reportportal.properties.example` as a template.
+Issues and PRs are welcome. Please keep the dependency footprint minimal (client-java + slf4j-api
+only) and reporting non-fatal. Release notes live in [CHANGELOG.md](CHANGELOG.md).
 
-## Releasing
+<details>
+<summary><b>Releasing (maintainers)</b></summary>
 
-Publishing to Maven Central is **automatic and tag-driven** — no manual version edits and no manual
-Central Portal step:
+Publishing to Maven Central is **automatic and tag-driven**:
 
-1. Push a version tag, e.g.:
+1. Push a version tag:
    ```bash
-   git tag v1.1.0 && git push origin v1.1.0
+   git tag v1.2.0 && git push origin v1.2.0
    ```
 2. The `Publish` workflow builds, signs, uploads, **and releases** that version
-   (`publishAndReleaseToMavenCentral`). The version is taken from the tag (`v1.1.0` → `1.1.0`); local
-   and non-tag builds use a `-SNAPSHOT` version.
+   (`publishAndReleaseToMavenCentral`). The version comes from the tag (`v1.2.0` → `1.2.0`); local and
+   non-tag builds use a `-SNAPSHOT` version. You can also trigger it manually (Actions → *Publish* →
+   *Run workflow*) with an explicit version.
 
-You can also trigger it manually (Actions → *Publish* → *Run workflow*) with an explicit version.
-
-Requires these repository secrets: `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`,
-`SIGNING_KEY_ID`, `SIGNING_PASSWORD`, `GPG_KEY_CONTENTS`.
+Requires repository secrets: `MAVEN_CENTRAL_USERNAME`, `MAVEN_CENTRAL_PASSWORD`, `SIGNING_KEY_ID`,
+`SIGNING_PASSWORD`, `GPG_KEY_CONTENTS`.
+</details>
 
 ## License
 
-Apache License 2.0.
+[Apache License 2.0](LICENSE).

@@ -6,10 +6,13 @@ import com.epam.reportportal.service.LoggingContext
 import com.epam.reportportal.service.ReportPortal
 import com.epam.reportportal.service.ReportPortalClient
 import com.epam.ta.reportportal.ws.model.log.SaveLogRQ
+import io.github.qasecret.rp.RpMdc
 import io.reactivex.Maybe
 import io.reactivex.schedulers.Schedulers
 import org.slf4j.LoggerFactory
+import org.slf4j.MDC
 import java.util.Date
+import java.util.concurrent.ConcurrentHashMap
 
 /** Everything needed to send a log bound to one ReportPortal item. */
 internal class RpLogContext(
@@ -20,29 +23,34 @@ internal class RpLogContext(
 )
 
 /**
- * Tracks the ReportPortal item for the test currently executing on each thread, so the public
- * [io.github.qasecret.rp.ReportPortalLogs] API can attach logs/files to it from inside a test body.
+ * Tracks the ReportPortal item for the test currently executing, so the public
+ * [io.github.qasecret.rp.ReportPortalLogs] API (and the bundled logback appender) can attach logs and
+ * files to it from inside a test body.
  *
- * Uses a per-thread stack (Kotest runs a test's before/body/after on one thread under the default
- * thread-affine dispatcher). Emission goes through a per-call [LoggingContext] on the calling thread,
- * which is the supported path for binary (multipart) attachments and is correct because the call
- * happens on the test-body thread.
+ * The current item is resolved by the test's item key, which [ReportPortalExtension] publishes to
+ * SLF4J [MDC] ([RpMdc.ITEM_KEY]) via [RpItemContextElement]. Because the key rides the test coroutine,
+ * resolution stays correct across coroutine thread-hops and under concurrent execution. Emission of
+ * binary (multipart) attachments goes through a per-call [LoggingContext] on the calling thread, which
+ * is the supported path and is correct because the call happens on the test-body thread.
  */
 internal object RpLog {
 
     private val logger = LoggerFactory.getLogger(RpLog::class.java)
-    private val stack = ThreadLocal.withInitial { ArrayDeque<RpLogContext>() }
 
-    fun push(context: RpLogContext) = stack.get().addLast(context)
+    /** Item key (see `RpMapper.testKey`) -> context, resolved via the SLF4J [MDC] value. */
+    private val byKey = ConcurrentHashMap<String, RpLogContext>()
 
-    /** Removes the context for [itemId] from the current thread's stack (best-effort, exception-safe). */
-    fun remove(itemId: Maybe<String>) {
-        stack.get().removeAll { it.itemId === itemId }
-    }
+    /** Registers [context] under its test item [key] so logs can be resolved via the MDC value. */
+    fun register(key: String, context: RpLogContext) { byKey[key] = context }
 
-    fun clear() = stack.get().clear()
+    /** Removes the per-key registration (best-effort, exception-safe). */
+    fun unregister(key: String) { byKey.remove(key) }
 
-    private fun current(): RpLogContext? = stack.get().lastOrNull()
+    fun clear() = byKey.clear()
+
+    /** Resolves the target item via the MDC item key published by [RpItemContextElement]. */
+    private fun current(): RpLogContext? =
+        MDC.get(RpMdc.ITEM_KEY)?.let { key -> byKey[key] }
 
     /** Sends a log (optionally with a file attachment) to the current test item; no-op if none. */
     fun emit(level: LogLevel, message: String, file: SaveLogRQ.File?) {
