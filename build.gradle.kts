@@ -34,6 +34,11 @@ dependencies {
     compileOnly("io.kotest:kotest-framework-api:$kotestVersion")
     compileOnly("io.kotest:kotest-framework-engine-jvm:$kotestVersion")
 
+    // logback is needed ONLY to compile the optional bundled appender (ReportPortalLogbackAppender).
+    // compileOnly keeps the policy intact: no logging backend is shipped — consumers using logback
+    // already have it; consumers on another backend simply never reference the appender class.
+    compileOnly("ch.qos.logback:logback-classic:1.5.15")
+
     // Tests run the real Kotest engine and assert against a recording ReportPortal client.
     testImplementation("io.kotest:kotest-framework-api:$kotestVersion")
     testImplementation("io.kotest:kotest-framework-engine-jvm:$kotestVersion")
@@ -42,7 +47,8 @@ dependencies {
     // Needed only to implement the ReportPortalClient.log(List<MultipartBody.Part>) member in the
     // recording test fake; the type comes transitively from client-java at runtime.
     testImplementation("com.squareup.okhttp3:okhttp:4.12.0")
-    testRuntimeOnly("ch.qos.logback:logback-classic:1.5.15")
+    // logback on the test compile classpath so the appender + concurrency logging tests can use it.
+    testImplementation("ch.qos.logback:logback-classic:1.5.15")
 }
 mavenPublishing {
     publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)

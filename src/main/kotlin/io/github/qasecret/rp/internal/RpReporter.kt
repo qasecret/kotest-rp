@@ -134,7 +134,7 @@ internal class RpReporter(
         try {
             val id = startItem(launch, testCase)
             itemIds[key] = id
-            rp.client?.let { RpLog.push(RpLogContext(it, launchUuidRef.get(), id, rp.parameters)) }
+            rp.client?.let { RpLog.register(key, RpLogContext(it, launchUuidRef.get(), id, rp.parameters)) }
         } catch (e: Exception) {
             logger.error("Failed to start test ${testCase.name.testName}", e)
         }
@@ -146,7 +146,7 @@ internal class RpReporter(
         // beforeTest is not fired for ignored tests; those are reported from finishSpec instead.
         val itemId = itemIds[key] ?: return
         if (!reported.add(key)) return
-        RpLog.remove(itemId)
+        RpLog.unregister(key)
         try {
             val status = RpMapper.status(result)
             if (status == ItemStatus.FAILED) anyFailure.set(true)

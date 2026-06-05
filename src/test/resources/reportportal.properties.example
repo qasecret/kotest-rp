@@ -5,7 +5,11 @@ rp.api.key = YOUR_API_KEY
 rp.launch = testing_launch
 rp.project = your_project
 
+# Toggle reporting off without removing the extension:
+# rp.enable = false
+
 # Optional — reruns & distributed launches:
 # rp.rerun = true
 # rp.rerun.of = <previous-launch-uuid>
-# rp.client.join = true
+# rp.client.join = true                              # client elects/joins one shared launch
+# rp.launch.uuid = <orchestrator-created-launch-uuid>  # report into an externally-managed launch

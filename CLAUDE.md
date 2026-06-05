@@ -82,11 +82,26 @@ The code is decomposed into four cohesive units (public surface = `ReportPortalE
   in `RpReporter.finishTest` via `defectTypeFor(...)`.
 - [ReportPortalLogs.kt](src/main/kotlin/io/github/qasecret/rp/ReportPortalLogs.kt) (public) +
   [internal/RpLog.kt](src/main/kotlin/io/github/qasecret/rp/internal/RpLog.kt) — attach logs/files to
-  the running test's item from inside a test body. `RpLog` keeps a **per-thread stack** of the current
-  item (pushed in `startTest`, removed in `finishTest`, cleared in `finishLaunch`); it relies on
-  Kotest's default thread-affine dispatcher (call from another thread → no-op). Text logs post directly
-  via `client.log(SaveLogRQ)` (deterministic, offline-testable); **file attachments** must use the
+  the running test's item from inside a test body. Text logs post directly via `client.log(SaveLogRQ)`
+  with explicit item/launch UUIDs (deterministic, offline-testable); **file attachments** must use the
   multipart path, so they go through a per-call `LoggingContext` on the test-body thread.
+- **Concurrency-safe log attribution** (the key resolution that makes both `ReportPortalLogs` *and*
+  ordinary SLF4J/logback logging land on the right item): `ReportPortalExtension` implements
+  `TestCaseExtension` and its `intercept` wraps each test in [internal/RpItemContextElement.kt] — a
+  `ThreadContextElement` that publishes the test's item key (`RpMapper.testKey`) to SLF4J **MDC**
+  ([RpMdc.ITEM_KEY], public). Because it rides the test coroutine, the key stays correct across
+  coroutine **thread-hops** (`withContext(Dispatchers.IO)`) and **concurrent** tests, which a plain
+  `ThreadLocal` cannot. `RpLog` resolves the target item solely by that MDC key via a
+  `ConcurrentHashMap` registry (`register` in `startTest`, `unregister` in `finishTest`,
+  `clear` in `finishLaunch`); logs with no MDC key (outside a test coroutine) are a no-op. Verified by
+  `ConcurrentLoggingTest`.
+- [logback/ReportPortalLogbackAppender.kt](src/main/kotlin/io/github/qasecret/rp/logback/ReportPortalLogbackAppender.kt)
+  (public, **`compileOnly` logback**) — turnkey appender so consumers' normal `LoggerFactory.getLogger`
+  logs flow to RP with zero custom code; it just forwards each event to `ReportPortalLogs.log` (which
+  resolves via the MDC key). Logback stays `compileOnly` so the no-logging-backend dependency policy
+  holds; non-logback users write a tiny appender against `RpMdc.ITEM_KEY` instead. **Empirically:** the
+  official `logger-java-logback` appender also works for *sequential* runs, but misattributes under
+  concurrency — this bundled path is the reliable one.
 
 ReportPortal hierarchy produced (default; with `syntheticRootSuite=true` a root SUITE is inserted
 between Launch and the specs):
@@ -115,10 +130,13 @@ Key implementation details to preserve when editing:
 - **Item keys are hashCode-free and collision-free.** Specs: `"spec:<fqcn>"`; tests:
   `"test:<descriptor.path(true).value>"` (the full, globally-unique path). Parent resolution walks
   `Descriptor.TestDescriptor.parent` / `SpecDescriptor`. Changing key formats breaks parent linking.
-- **Logging bypasses `LoggingContext` entirely.** `LoggingContext` is thread-local with a per-thread
-  `Deque`, which is unreliable across Kotest's coroutine dispatch. Failure logs are sent via
-  `rp.client.log(SaveLogRQ)` with explicit item + launch UUIDs (resolved with `Maybe.blockingGet`),
-  making reporting correct under parallel execution. Do not reintroduce ambient-context logging.
+- **Logging never relies on ReportPortal's ambient `LoggingContext`** for text logs. RP's
+  `LoggingContext` is a thread-local `Deque` that is unreliable across Kotest's coroutine dispatch.
+  Failure logs (in `finishTest`) and `ReportPortalLogs` text logs are sent via `rp.client.log(SaveLogRQ)`
+  with explicit item + launch UUIDs (resolved with `Maybe.blockingGet`). The "current item" is resolved
+  through **our own** MDC key channel ([RpMdc.ITEM_KEY] + `RpItemContextElement`, see above), not RP's
+  `LoggingContext`. Do not route text logging through RP's ambient `LoggingContext`. (File attachments
+  still need a per-call `LoggingContext` because the multipart upload path requires it.)
 - **Timestamps use full `Date()` precision** (millisecond). The model time fields are `java.util.Date`
   in client-java 5.2.23 (not `Instant`). Do not truncate to seconds.
 - **Non-fatal everywhere.** `RpReporter` catches per-operation and `ReportPortalExtension.guard`
