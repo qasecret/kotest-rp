@@ -40,3 +40,6 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### ReportPortal — never commit the real properties (contains the API key) ###
+src/test/resources/reportportal.properties

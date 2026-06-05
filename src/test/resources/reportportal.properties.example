@@ -1,0 +1,11 @@
+# Copy this file to reportportal.properties (kept out of git) and fill in your values.
+# Used only by the opt-in live smoke tests (run with -Drp.live=true).
+rp.endpoint = http://localhost:8082
+rp.api.key = YOUR_API_KEY
+rp.launch = testing_launch
+rp.project = your_project
+
+# Optional — reruns & distributed launches:
+# rp.rerun = true
+# rp.rerun.of = <previous-launch-uuid>
+# rp.client.join = true
