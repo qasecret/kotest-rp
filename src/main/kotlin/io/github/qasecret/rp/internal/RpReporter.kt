@@ -14,6 +14,7 @@ import io.github.qasecret.rp.RpConfig
 import io.kotest.core.spec.Spec
 import io.kotest.core.test.TestCase
 import io.kotest.core.test.TestResult
+import io.kotest.core.test.TestType
 import io.reactivex.Maybe
 import org.slf4j.LoggerFactory
 import java.util.Date
@@ -45,6 +46,24 @@ internal class RpReporter(
 
     /** Item-tree keys (see [RpMapper]) -> started ReportPortal item. */
     private val itemIds = ConcurrentHashMap<String, Maybe<String>>()
+
+    /**
+     * Data-driven (`withData`) nodes are [TestType.Dynamic]: Kotest only reveals whether such a node
+     * is a leaf or a container once its block runs. We defer creating its ReportPortal item until we
+     * know — as a SUITE if it gets children (so the real tests roll up into launch statistics), or as a
+     * leaf at finish if it never does. This holds the deferred nodes between `startTest` and the moment
+     * their role is resolved.
+     */
+    private val pending = ConcurrentHashMap<String, TestCase>()
+
+    /**
+     * Dynamic nodes that were still `pending` at their own `finishTest` (no executed child had
+     * materialized them). They might still own **ignored** children, which only `finishSpec` reports —
+     * and those must be able to promote the node to a SUITE. So we stash the result here and finish the
+     * node in `finishSpec`, *after* ignored children have had their chance to materialize it, rather
+     * than fixing it as a leaf prematurely (which would re-nest the skipped children under a STEP).
+     */
+    private val deferredFinish = ConcurrentHashMap<String, Pair<TestCase, TestResult>>()
 
     /** Keys already finished, to avoid double-finishing and to detect un-reported ignored tests. */
     private val reported: MutableSet<String> = ConcurrentHashMap.newKeySet()
@@ -130,11 +149,14 @@ internal class RpReporter(
     fun startTest(testCase: TestCase) {
         val launch = activeLaunch() ?: return
         val key = RpMapper.testKey(testCase)
-        if (itemIds.containsKey(key)) return
+        if (itemIds.containsKey(key) || pending.containsKey(key)) return
         try {
-            val id = startItem(launch, testCase)
-            itemIds[key] = id
-            rp.client?.let { RpLog.register(key, RpLogContext(it, launchUuidRef.get(), id, rp.parameters)) }
+            // Defer Dynamic (`withData`) nodes: their role (leaf vs container) isn't known yet.
+            if (testCase.type == TestType.Dynamic) {
+                pending[key] = testCase
+                return
+            }
+            createItem(launch, testCase, key, RpMapper.itemType(testCase, config))
         } catch (e: Exception) {
             logger.error("Failed to start test ${testCase.name.testName}", e)
         }
@@ -143,8 +165,20 @@ internal class RpReporter(
     fun finishTest(testCase: TestCase, result: TestResult) {
         val launch = activeLaunch() ?: return
         val key = RpMapper.testKey(testCase)
-        // beforeTest is not fired for ignored tests; those are reported from finishSpec instead.
-        val itemId = itemIds[key] ?: return
+        val itemId = itemIds[key]
+        if (itemId == null) {
+            // beforeTest never fires for ignored tests (reported from finishSpec). A Dynamic node still
+            // in `pending` here had no *executed* children, but may still own *ignored* ones that
+            // finishSpec reports; those need to promote it to a SUITE. Defer its finish to finishSpec
+            // rather than fixing it as a leaf now (which would re-nest the skipped children under a STEP).
+            if (pending.containsKey(key)) deferredFinish[key] = testCase to result
+            return
+        }
+        finishItem(launch, testCase, key, itemId, result)
+    }
+
+    /** Finishes an already-created item: failure log + status + issue, guarded and once-only. */
+    private fun finishItem(launch: Launch, testCase: TestCase, key: String, itemId: Maybe<String>, result: TestResult) {
         if (!reported.add(key)) return
         RpLog.unregister(key)
         try {
@@ -197,6 +231,11 @@ internal class RpReporter(
                 }
             }
 
+            // Finish Dynamic nodes deferred from finishTest. Ignored children (reported above) have by
+            // now materialized any container node as a SUITE via resolveParent; whatever is still
+            // pending genuinely had no children and is materialized as a real leaf.
+            finishDeferred(launch)
+
             val specKey = RpMapper.specKey(kclass)
             val specId = itemIds[specKey] ?: return
             if (!reported.add(specKey)) return
@@ -234,6 +273,8 @@ internal class RpReporter(
             logger.error("Failed to finish ReportPortal launch", e)
         } finally {
             itemIds.clear()
+            pending.clear()
+            deferredFinish.clear()
             reported.clear()
             RpLog.clear()
         }
@@ -241,7 +282,14 @@ internal class RpReporter(
 
     // --- helpers ---
 
-    private fun startItem(launch: Launch, testCase: TestCase, type: String = RpMapper.itemType(testCase, config)): Maybe<String> {
+    /**
+     * Creates the ReportPortal item for [testCase] under [key] with the given [type], records it, and
+     * registers its log context. Idempotent and safe under concurrent children (e.g. concurrent leaves
+     * materializing the same deferred Dynamic parent): the parent is resolved before locking, then a
+     * double-checked put guarantees a single creation per key.
+     */
+    private fun createItem(launch: Launch, testCase: TestCase, key: String, type: String): Maybe<String> {
+        itemIds[key]?.let { return it }
         val rq = StartTestItemRQ().apply {
             name = RpMapper.displayName(testCase)
             startTime = now()
@@ -251,14 +299,37 @@ internal class RpReporter(
             attributes = RpMapper.testAttributes(testCase)
             isHasStats = true
         }
-        val parent = resolveParent(testCase)
-        return if (parent != null) launch.startTestItem(parent, rq) else launch.startTestItem(rq)
+        // Resolve the parent (which may itself materialize a pending ancestor) outside the lock.
+        val parent = resolveParent(launch, testCase)
+        synchronized(itemIds) {
+            itemIds[key]?.let { return it }
+            val id = if (parent != null) launch.startTestItem(parent, rq) else launch.startTestItem(rq)
+            itemIds[key] = id
+            pending.remove(key)
+            rp.client?.let { RpLog.register(key, RpLogContext(it, launchUuidRef.get(), id, rp.parameters)) }
+            return id
+        }
+    }
+
+    /**
+     * Finishes the Dynamic nodes deferred at [finishTest]. By call time, ignored children have already
+     * promoted container nodes to SUITEs (in `itemIds`); a node still only in `pending` had no children
+     * at all and is materialized here as a leaf. Children are finished before their parent because
+     * `reportSkipped` runs first.
+     */
+    private fun finishDeferred(launch: Launch) {
+        deferredFinish.forEach { (key, deferred) ->
+            val (testCase, result) = deferred
+            val itemId = itemIds[key] ?: createItem(launch, testCase, key, RpMapper.leafType(config))
+            finishItem(launch, testCase, key, itemId, result)
+        }
+        deferredFinish.clear()
     }
 
     private fun reportSkipped(launch: Launch, testCase: TestCase, result: TestResult.Ignored) {
         val key = RpMapper.testKey(testCase)
         if (!reported.add(key)) return
-        val id = startItem(launch, testCase, RpMapper.leafType(config))
+        val id = createItem(launch, testCase, key, RpMapper.leafType(config))
         launch.finishTestItem(
             id,
             FinishTestItemRQ().apply {
@@ -269,9 +340,15 @@ internal class RpReporter(
         )
     }
 
-    private fun resolveParent(testCase: TestCase): Maybe<String>? {
-        val byParent = RpMapper.parentKey(testCase)?.let { itemIds[it] }
-        return byParent ?: itemIds[RpMapper.specKey(testCase.spec)] ?: rootSuiteId.get()
+    private fun resolveParent(launch: Launch, testCase: TestCase): Maybe<String>? {
+        val parentKey = RpMapper.parentKey(testCase)
+        if (parentKey != null) {
+            itemIds[parentKey]?.let { return it }
+            // The parent is a deferred Dynamic node that has now produced a child, so it is a container:
+            // materialize it as a SUITE before nesting this child under it.
+            pending[parentKey]?.let { return createItem(launch, it, parentKey, "SUITE") }
+        }
+        return itemIds[RpMapper.specKey(testCase.spec)] ?: rootSuiteId.get()
     }
 
     /** Resolver wins when set (null return = no defect); otherwise the configured default applies. */

@@ -109,8 +109,8 @@ between Launch and the specs):
 ```
 Launch                              (beforeProject)
  └─ <Spec class>      (SUITE)       (prepareSpec)
-     └─ container     (SUITE)       (beforeTest, TestType.Container)
-         └─ test/leaf (STEP|TEST)   (beforeTest, TestType.Test/Dynamic)
+     └─ container     (SUITE)       (beforeTest, TestType.Container, or a Dynamic node with children)
+         └─ test/leaf (STEP|TEST)   (beforeTest, TestType.Test, or a childless Dynamic node)
 ```
 
 Lifecycle mapping (each guarded so it runs once where relevant):
@@ -127,6 +127,24 @@ Lifecycle mapping (each guarded so it runs once where relevant):
 - `afterProject` → `finishLaunch`: finishes root suite (if any) + launch; clears state.
 
 Key implementation details to preserve when editing:
+- **`withData`/`TestType.Dynamic` nodes are materialized lazily.** A datatest data node is
+  `TestType.Dynamic`, which Kotest only resolves to leaf-or-container once its block runs (a leaf when
+  the block asserts directly; a container when it opens nested `Given`/`When`/`Then`/etc). `startTest`
+  therefore does **not** create an RP item for a Dynamic node immediately — it parks it in `pending`.
+  `resolveParent` materializes a pending parent as a **SUITE** the moment a child appears under it. A
+  Dynamic node still pending at its own `finishTest` is **not** fixed as a leaf there — its finish is
+  *deferred* (`deferredFinish`) to `finishSpec`, because it may still own **ignored** children that only
+  `finishSpec` reports (via `reportSkipped`), and those must be able to promote it to a SUITE first.
+  `finishDeferred` runs **after** the ignored-test loop: whatever is still only in `pending` by then
+  genuinely had no children and is materialized as a **leaf**; the rest were already promoted to SUITEs.
+  This is load-bearing: creating Dynamic nodes eagerly as leaves (the original behavior) made RP nest the
+  real Given/When/Then items as *nested steps* under a STEP, so they never rolled up into launch
+  statistics (no pass/fail counts, broken tree); fixing a node as a leaf at `finishTest` re-broke the
+  same way for the all-children-ignored case. **Invariant: nothing may be parented under a STEP/TEST
+  item.** Verified by `WithDataReportingTest` (nested-container, all-ignored, and leaf cases). Trade-off:
+  logs emitted *directly in a `withData` leaf body* (not in a nested `Then`) attach when the leaf
+  finishes rather than mid-body, since the item doesn't exist until then; failure ERROR logs are
+  unaffected (always sent when the item is finished).
 - **Item keys are hashCode-free and collision-free.** Specs: `"spec:<fqcn>"`; tests:
   `"test:<descriptor.path(true).value>"` (the full, globally-unique path). Parent resolution walks
   `Descriptor.TestDescriptor.parent` / `SpecDescriptor`. Changing key formats breaks parent linking.
