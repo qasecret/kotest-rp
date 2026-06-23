@@ -14,7 +14,7 @@ version = run {
         ?.takeIf { it.startsWith("refs/tags/") }
         ?.substringAfterLast('/')
         ?.removePrefix("v")
-    explicit ?: fromTag ?: "1.1.0-SNAPSHOT"
+    explicit ?: fromTag ?: "1.2.1-SNAPSHOT"
 }
 
 repositories {
@@ -44,6 +44,7 @@ dependencies {
     testImplementation("io.kotest:kotest-framework-engine-jvm:$kotestVersion")
     testImplementation("io.kotest:kotest-assertions-core:$kotestVersion")
     testImplementation("io.kotest:kotest-runner-junit5-jvm:$kotestVersion")
+    testImplementation("io.kotest:kotest-framework-datatest:$kotestVersion")
     // Needed only to implement the ReportPortalClient.log(List<MultipartBody.Part>) member in the
     // recording test fake; the type comes transitively from client-java at runtime.
     testImplementation("com.squareup.okhttp3:okhttp:4.12.0")
