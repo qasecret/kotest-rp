@@ -47,7 +47,7 @@ dependencies {
     testImplementation("io.kotest:kotest-runner-junit5-jvm:$kotestVersion")
     // Needed only to implement the ReportPortalClient.log(List<MultipartBody.Part>) member in the
     // recording test fake; the type comes transitively from client-java at runtime.
-    testImplementation("com.squareup.okhttp3:okhttp:4.12.0")
+    testImplementation("com.squareup.okhttp3:okhttp:5.4.0")
     // logback on the test compile classpath so the appender + concurrency logging tests can use it.
     testImplementation("ch.qos.logback:logback-classic:1.5.15")
 }
