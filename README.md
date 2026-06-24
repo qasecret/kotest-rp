@@ -8,7 +8,7 @@
 [![Build](https://img.shields.io/github/actions/workflow/status/qasecret/kotest-rp/build.yml?branch=main&style=flat-square&logo=github)](https://github.com/qasecret/kotest-rp/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green?style=flat-square)](LICENSE)
 [![Kotlin](https://img.shields.io/badge/Kotlin-JVM-7F52FF?style=flat-square&logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![Kotest](https://img.shields.io/badge/Kotest-5.9.x-4DB33D?style=flat-square)](https://kotest.io)
+[![Kotest](https://img.shields.io/badge/Kotest-6.1.x-4DB33D?style=flat-square)](https://kotest.io)
 
 </div>
 
@@ -67,7 +67,7 @@ ReportPortal server can never break your build.
 dependencies {
     testImplementation("io.github.qasecret:kotest-rp:<version>")
     // Already have these if you use Kotest; shown for completeness:
-    testImplementation("io.kotest:kotest-runner-junit5:5.9.1")
+    testImplementation("io.kotest:kotest-runner-junit5:6.1.4")
     // Pick any SLF4J backend (kotest-rp ships none):
     testRuntimeOnly("ch.qos.logback:logback-classic:1.5.6")
 }
@@ -243,8 +243,8 @@ Then("checkout succeeds")
     ) { /* ... */ }
 ```
 
-> Kotest 5.9 doesn't expose per-invocation results to extensions, so invocations produce **markers**,
-> not ReportPortal *retry groups*. Full retry grouping is planned alongside Kotest 6 support.
+> Kotest doesn't expose per-invocation results to extensions, so invocations produce **markers**,
+> not ReportPortal *retry groups*.
 
 ## Failures & defect types
 
@@ -321,7 +321,7 @@ You can also inject a pre-built `ReportPortal` instance: `ReportPortalExtension(
 
 | | |
 |---|---|
-| **Kotest** | 5.9.x |
+| **Kotest** | 6.1.x |
 | **JVM** | 17+ |
 | **ReportPortal** | client-java 5.2.x (server v5) |
 

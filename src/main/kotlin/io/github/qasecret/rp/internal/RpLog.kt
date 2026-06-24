@@ -37,42 +37,84 @@ internal object RpLog {
 
     private val logger = LoggerFactory.getLogger(RpLog::class.java)
 
+    /** A log emitted before its item existed, held (with its original timestamp) until the item does. */
+    private class BufferedLog(
+        val level: LogLevel,
+        val message: String,
+        val file: SaveLogRQ.File?,
+        val time: Date,
+    )
+
     /** Item key (see `RpMapper.testKey`) -> context, resolved via the SLF4J [MDC] value. */
     private val byKey = ConcurrentHashMap<String, RpLogContext>()
 
-    /** Registers [context] under its test item [key] so logs can be resolved via the MDC value. */
-    fun register(key: String, context: RpLogContext) { byKey[key] = context }
+    /**
+     * Item key -> logs emitted before the item was created. A `withData` data row (and any container)
+     * is materialized lazily by `RpReporter`, so logs from its body run before its RP item exists.
+     * Rather than drop them (the old behavior), we buffer them here and flush on [register].
+     */
+    private val buffers = ConcurrentHashMap<String, java.util.concurrent.ConcurrentLinkedQueue<BufferedLog>>()
+
+    /**
+     * Opens a buffer for a not-yet-created item [key] so logs emitted from its body are retained until
+     * the item is materialized (see [register]). Called by `RpReporter` when it defers a container.
+     */
+    fun beginBuffering(key: String) { buffers.putIfAbsent(key, java.util.concurrent.ConcurrentLinkedQueue()) }
+
+    /** Registers [context] under its test item [key], flushing any logs buffered before it existed. */
+    fun register(key: String, context: RpLogContext) {
+        byKey[key] = context
+        buffers.remove(key)?.forEach { buffered ->
+            try {
+                send(context, buffered.level, buffered.message, buffered.file, buffered.time)
+            } catch (e: Exception) {
+                logger.debug("Failed to flush buffered ReportPortal log/attachment", e)
+            }
+        }
+    }
 
     /** Removes the per-key registration (best-effort, exception-safe). */
     fun unregister(key: String) { byKey.remove(key) }
 
-    fun clear() = byKey.clear()
+    fun clear() {
+        byKey.clear()
+        buffers.clear()
+    }
 
-    /** Resolves the target item via the MDC item key published by [RpItemContextElement]. */
-    private fun current(): RpLogContext? =
-        MDC.get(RpMdc.ITEM_KEY)?.let { key -> byKey[key] }
-
-    /** Sends a log (optionally with a file attachment) to the current test item; no-op if none. */
+    /** Sends a log (optionally with a file attachment) to the current test item; buffers or drops if none. */
     fun emit(level: LogLevel, message: String, file: SaveLogRQ.File?) {
-        val ctx = current() ?: run {
+        val key = MDC.get(RpMdc.ITEM_KEY) ?: run {
             logger.debug("No active ReportPortal test item on this thread; log dropped")
             return
         }
-        try {
-            if (file == null) emitText(ctx, level, message) else emitAttachment(ctx, level, message, file)
-        } catch (e: Exception) {
-            logger.debug("Failed to emit ReportPortal log/attachment", e)
+        val ctx = byKey[key]
+        if (ctx != null) {
+            try {
+                send(ctx, level, message, file, Date())
+            } catch (e: Exception) {
+                logger.debug("Failed to emit ReportPortal log/attachment", e)
+            }
+            return
         }
+        // The item isn't created yet. If it's a deferred (buffering) container, retain the log with its
+        // real timestamp; otherwise there is no item to attach to and it is dropped.
+        val buffer = buffers[key]
+        if (buffer != null) buffer.add(BufferedLog(level, message, file, Date()))
+        else logger.debug("No active ReportPortal test item on this thread; log dropped")
+    }
+
+    private fun send(ctx: RpLogContext, level: LogLevel, message: String, file: SaveLogRQ.File?, time: Date) {
+        if (file == null) emitText(ctx, level, message, time) else emitAttachment(ctx, level, message, file, time)
     }
 
     /** Plain text log: posted directly with explicit UUIDs (deterministic, thread-safe, no context). */
-    private fun emitText(ctx: RpLogContext, level: LogLevel, message: String) {
+    private fun emitText(ctx: RpLogContext, level: LogLevel, message: String, time: Date) {
         val uuid = ctx.itemId.blockingGet() ?: return
         val rq = SaveLogRQ().apply {
             itemUuid = uuid
             this.message = message
             this.level = level.name
-            logTime = Date()
+            logTime = time
             ctx.launchUuid?.blockingGet()?.let { launchUuid = it }
         }
         ctx.client.log(rq).blockingGet()
@@ -82,7 +124,7 @@ internal object RpLog {
      * File attachment: binaries must be uploaded via ReportPortal's multipart path, which goes through
      * a [LoggingContext]. Safe here because this runs on the test-body thread for the current item.
      */
-    private fun emitAttachment(ctx: RpLogContext, level: LogLevel, message: String, file: SaveLogRQ.File) {
+    private fun emitAttachment(ctx: RpLogContext, level: LogLevel, message: String, file: SaveLogRQ.File, time: Date) {
         LoggingContext.init(ctx.launchUuid ?: Maybe.empty(), ctx.itemId, ctx.client, Schedulers.io(), ctx.params)
         try {
             ReportPortal.emitLog { itemUuid ->
@@ -90,7 +132,7 @@ internal object RpLog {
                     this.itemUuid = itemUuid
                     this.message = message
                     this.level = level.name
-                    logTime = Date()
+                    logTime = time
                     this.file = file
                 }
             }

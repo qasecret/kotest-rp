@@ -3,7 +3,7 @@ package io.github.qasecret.rp
 import io.kotest.core.config.AbstractProjectConfig
 import io.kotest.core.extensions.Extension
 import io.kotest.core.spec.style.FunSpec
-import io.kotest.core.test.TestResult
+import io.kotest.engine.test.TestResult
 import io.kotest.engine.TestEngineLauncher
 import io.kotest.matchers.shouldBe
 
@@ -25,7 +25,7 @@ class LiveDefectReportPortalTest : FunSpec({
         )
         val extension = ReportPortalExtension(config)
         val projectConfig = object : AbstractProjectConfig() {
-            override fun extensions(): List<Extension> = listOf(extension)
+            override val extensions: List<Extension> = listOf(extension)
         }
 
         TestEngineLauncher().withProjectConfig(projectConfig).withClasses(DefectSpec::class).launch()

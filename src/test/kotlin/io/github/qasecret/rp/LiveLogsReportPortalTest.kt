@@ -18,7 +18,7 @@ class LiveLogsReportPortalTest : FunSpec({
     test("reports logs and a file attachment to ReportPortal").config(enabled = live) {
         val extension = ReportPortalExtension()
         val projectConfig = object : AbstractProjectConfig() {
-            override fun extensions(): List<Extension> = listOf(extension)
+            override val extensions: List<Extension> = listOf(extension)
         }
 
         TestEngineLauncher()

@@ -20,12 +20,13 @@ import io.kotest.matchers.shouldBe
  */
 class AttributesMappingTest : FunSpec({
 
-    fun run(client: RecordingReportPortalClient) {
+    fun run(client: RecordingReportPortalClient, vararg specs: kotlin.reflect.KClass<out io.kotest.core.spec.Spec>) {
         val extension = ReportPortalExtension(reportPortal(client), RpConfig())
         val projectConfig = object : AbstractProjectConfig() {
-            override fun extensions(): List<Extension> = listOf(extension)
+            override val extensions: List<Extension> = listOf(extension)
         }
-        TestEngineLauncher().withProjectConfig(projectConfig).withClasses(TaggedSeveritySpec::class).launch()
+        val targets = if (specs.isEmpty()) arrayOf(TaggedSeveritySpec::class) else specs
+        TestEngineLauncher().withProjectConfig(projectConfig).withClasses(*targets).launch()
     }
 
     test("launch carries the agent system attribute") {
@@ -51,6 +52,16 @@ class AttributesMappingTest : FunSpec({
         val attrs = client.started("TaggedSeveritySpec").rq.attributes
         attrs.any { it.key == "tag" && it.value == "Smoke" } shouldBe true
     }
+
+    test("a test inherits tags from an enclosing container") {
+        val client = RecordingReportPortalClient()
+        run(client, InheritedConfigSpec::class)
+        // Kotest 6's TestConfig is a sparse per-test override; tags set on the container live on its
+        // TestCase, so the leaf must pick them up by walking its parent chain rather than reading only
+        // its own (empty) override.
+        val attrs = client.started("inherits").rq.attributes
+        attrs.any { it.key == null && it.value == "slow" } shouldBe true
+    }
 }) {
     @Tags("Smoke")
     class TaggedSeveritySpec : FunSpec({
@@ -59,5 +70,12 @@ class AttributesMappingTest : FunSpec({
                 tags = setOf(NamedTag("team:payments"), NamedTag("fast")),
                 severity = TestCaseSeverityLevel.CRITICAL,
             ) { 1 shouldBe 1 }
+    })
+
+    class InheritedConfigSpec : FunSpec({
+        context("outer")
+            .config(tags = setOf(NamedTag("slow"))) {
+                test("inherits") { 1 shouldBe 1 }
+            }
     })
 }

@@ -32,7 +32,7 @@ class LiveDistributedReportPortalTest : FunSpec({
         val reportPortal = ReportPortal.builder().withParameters(params).build()
         val extension = ReportPortalExtension(reportPortal, RpConfig())
         val projectConfig = object : AbstractProjectConfig() {
-            override fun extensions(): List<Extension> = listOf(extension)
+            override val extensions: List<Extension> = listOf(extension)
         }
 
         val spec = if (shard == "B") ShardBSpec::class else ShardASpec::class

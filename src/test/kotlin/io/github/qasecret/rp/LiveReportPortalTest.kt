@@ -22,7 +22,7 @@ class LiveReportPortalTest : FunSpec({
     test("reports a real launch to the configured ReportPortal").config(enabled = live) {
         val extension = ReportPortalExtension() // reads reportportal.properties from the classpath
         val projectConfig = object : AbstractProjectConfig() {
-            override fun extensions(): List<Extension> = listOf(extension)
+            override val extensions: List<Extension> = listOf(extension)
         }
 
         TestEngineLauncher()

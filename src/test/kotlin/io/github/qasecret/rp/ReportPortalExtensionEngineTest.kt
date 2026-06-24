@@ -24,7 +24,7 @@ class ReportPortalExtensionEngineTest : FunSpec({
     fun run(client: RecordingReportPortalClient, config: RpConfig, vararg specs: KClass<out io.kotest.core.spec.Spec>) {
         val extension = ReportPortalExtension(reportPortal(client), config)
         val projectConfig = object : AbstractProjectConfig() {
-            override fun extensions(): List<Extension> = listOf(extension)
+            override val extensions: List<Extension> = listOf(extension)
         }
         TestEngineLauncher().withProjectConfig(projectConfig).withClasses(*specs).launch()
     }
@@ -113,6 +113,10 @@ class ReportPortalExtensionEngineTest : FunSpec({
     })
 
     class IgnoredSpec : FunSpec({
+        // A real (enabled) test keeps the spec active. Kotest 6 delivers the disabled `xtest` via the
+        // dedicated IgnoredTestListener (not finalizeSpec/afterTest); a spec containing ONLY disabled
+        // tests would instead be skipped wholesale at the spec level, which is a different path.
+        test("runs") { 1 shouldBe 1 }
         xtest("skipped") { 1 shouldBe 1 }
     })
 

@@ -5,7 +5,7 @@ import io.github.qasecret.rp.support.RecordingReportPortalClient.Companion.repor
 import io.kotest.core.config.AbstractProjectConfig
 import io.kotest.core.extensions.Extension
 import io.kotest.core.spec.style.FunSpec
-import io.kotest.core.test.TestResult
+import io.kotest.engine.test.TestResult
 import io.kotest.engine.TestEngineLauncher
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -17,7 +17,7 @@ class DefectMappingTest : FunSpec({
     fun run(client: RecordingReportPortalClient, config: RpConfig) {
         val extension = ReportPortalExtension(reportPortal(client), config)
         val projectConfig = object : AbstractProjectConfig() {
-            override fun extensions(): List<Extension> = listOf(extension)
+            override val extensions: List<Extension> = listOf(extension)
         }
         TestEngineLauncher().withProjectConfig(projectConfig).withClasses(FailuresSpec::class).launch()
     }

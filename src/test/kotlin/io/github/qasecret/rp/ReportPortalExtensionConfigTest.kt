@@ -16,7 +16,7 @@ class ReportPortalExtensionConfigTest : FunSpec({
     fun run(client: RecordingReportPortalClient, config: RpConfig, vararg specs: KClass<out io.kotest.core.spec.Spec>) {
         val extension = ReportPortalExtension(reportPortal(client), config)
         val projectConfig = object : AbstractProjectConfig() {
-            override fun extensions(): List<Extension> = listOf(extension)
+            override val extensions: List<Extension> = listOf(extension)
         }
         TestEngineLauncher().withProjectConfig(projectConfig).withClasses(*specs).launch()
     }
