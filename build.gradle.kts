@@ -26,7 +26,7 @@ dependencies {
     // slf4j-api and deliberately does NOT ship a logging backend, so consumers keep control of
     // their own (logback, log4j2, etc.) without classpath conflicts.
     implementation("com.epam.reportportal:client-java:5.4.15")
-    implementation("org.slf4j:slf4j-api:2.0.16")
+    implementation("org.slf4j:slf4j-api:2.0.18")
 
     // Kotest is provided by the consumer (this is a Kotest extension); compile against it only.
     // Kotest 6 folded the former `kotest-framework-api` module into `kotest-framework-engine`,
