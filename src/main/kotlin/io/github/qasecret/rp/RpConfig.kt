@@ -2,7 +2,7 @@ package io.github.qasecret.rp
 
 import com.epam.reportportal.listeners.ListenerParameters
 import io.kotest.core.test.TestCase
-import io.kotest.core.test.TestResult
+import io.kotest.engine.test.TestResult
 
 /**
  * ReportPortal defect-type locators for the built-in defect groups. Pass any of these (or a custom

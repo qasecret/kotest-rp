@@ -3,20 +3,20 @@ package io.github.qasecret.rp
 import com.epam.reportportal.listeners.ItemStatus
 import io.github.qasecret.rp.internal.RpMapper
 import io.kotest.core.spec.style.FunSpec
-import io.kotest.core.test.TestResult
+import io.kotest.engine.test.TestResult
 import io.kotest.matchers.shouldBe
+import kotlin.time.Duration
 
 /**
  * Pure unit tests for [RpMapper]. TestCase-dependent mappings (names, types, codeRef, parent links)
  * are covered end-to-end in [ReportPortalExtensionEngineTest] via the recorded ReportPortal requests.
  */
-@Suppress("DEPRECATION") // TestResult.success/failure/error(Long) are the only public factories in 5.9
 class RpMapperTest : FunSpec({
 
     test("status maps each TestResult variant to the right ReportPortal status") {
-        RpMapper.status(TestResult.success(0L)) shouldBe ItemStatus.PASSED
-        RpMapper.status(TestResult.failure(AssertionError("boom"), 0L)) shouldBe ItemStatus.FAILED
-        RpMapper.status(TestResult.error(RuntimeException("boom"), 0L)) shouldBe ItemStatus.FAILED
+        RpMapper.status(TestResult.Success(Duration.ZERO)) shouldBe ItemStatus.PASSED
+        RpMapper.status(TestResult.Failure(Duration.ZERO, AssertionError("boom"))) shouldBe ItemStatus.FAILED
+        RpMapper.status(TestResult.Error(Duration.ZERO, RuntimeException("boom"))) shouldBe ItemStatus.FAILED
         RpMapper.status(TestResult.Ignored("skip")) shouldBe ItemStatus.SKIPPED
     }
 

@@ -12,18 +12,19 @@ import io.kotest.matchers.shouldBe
 import kotlin.reflect.KClass
 
 /**
- * Regression coverage for `withData` (datatest). Kotest types a `withData` data node as
- * [io.kotest.core.test.TestType.Dynamic], which is a leaf ONLY when the data block makes no nested
- * tests. When the block opens nested containers (the common `Context -> withData -> Given/When/Then`
- * shape) the data node is really a container, and reporting it to ReportPortal as a leaf STEP makes RP
- * treat all the real tests as nested steps of one item — so they never roll up into launch statistics.
+ * Regression coverage for `withData` (datatest). Kotest 6 types every `withData` data node as
+ * [io.kotest.core.test.TestType.Container] — even one whose block only asserts (no nested tests),
+ * which is really a leaf. `RpReporter` defers each container's RP item: it becomes a SUITE the moment a
+ * child appears, or a leaf STEP at finish if none ever does. Reporting a childless data node eagerly as
+ * a SUITE would leave an empty suite contributing no pass/fail counts; reporting one with children as a
+ * leaf STEP would make RP treat the real tests as nested steps that never roll up into statistics.
  */
 class WithDataReportingTest : FunSpec({
 
     fun run(client: RecordingReportPortalClient, vararg specs: KClass<out io.kotest.core.spec.Spec>) {
         val extension = ReportPortalExtension(reportPortal(client), RpConfig())
         val projectConfig = object : AbstractProjectConfig() {
-            override fun extensions(): List<Extension> = listOf(extension)
+            override val extensions: List<Extension> = listOf(extension)
         }
         TestEngineLauncher().withProjectConfig(projectConfig).withClasses(*specs).launch()
     }
@@ -32,7 +33,9 @@ class WithDataReportingTest : FunSpec({
         val client = RecordingReportPortalClient()
         run(client, NestedDataSpec::class)
 
-        val scenario = client.started("Scenario 1")
+        // In Kotest 6 a `withData` row opened inside a BehaviorSpec `Context` is itself a Context, so
+        // its name carries the `Context: ` affix.
+        val scenario = client.started("Context: Scenario 1")
         scenario.rq.type shouldBe "SUITE"
 
         val given = client.started("Given: an authorized user")
@@ -82,6 +85,16 @@ class WithDataReportingTest : FunSpec({
         leaf.rq.type shouldBe "STEP"
         client.finishOf(leaf.uuid).rq.status shouldBe "PASSED"
     }
+
+    test("logs emitted in a withData leaf body are buffered and attach to the materialized leaf") {
+        val client = RecordingReportPortalClient()
+        run(client, LoggingLeafDataSpec::class)
+
+        // The leaf's RP item does not exist while its body runs (the container is deferred), so the log
+        // is buffered and flushed onto the item the moment it is materialized — not dropped.
+        val leaf = client.started("datum-9")
+        client.logsFor(leaf.uuid).map { it.message } shouldBe listOf("from-leaf-body")
+    }
 }) {
 
     class NestedDataSpec : BehaviorSpec({
@@ -111,8 +124,8 @@ class WithDataReportingTest : FunSpec({
                 // via the low-level ContainerScope API because the FunSpec `xtest` DSL isn't visible on
                 // the generic `withData` receiver.
                 registerTest(
-                    io.kotest.core.names.TestName("it is verified"),
-                    disabled = true,
+                    io.kotest.core.names.TestNameBuilder.builder("it is verified").build(),
+                    io.kotest.core.spec.style.TestXMethod.DISABLED,
                     null,
                     io.kotest.core.test.TestType.Test,
                 ) { 1 shouldBe 1 }
@@ -127,6 +140,18 @@ class WithDataReportingTest : FunSpec({
                 ts = listOf(7),
             ) { n ->
                 n shouldBe 7
+            }
+        }
+    })
+
+    class LoggingLeafDataSpec : FunSpec({
+        context("numbers") {
+            withData(
+                nameFn = { "datum-$it" },
+                ts = listOf(9),
+            ) { n ->
+                ReportPortalLogs.info("from-leaf-body")
+                n shouldBe 9
             }
         }
     })

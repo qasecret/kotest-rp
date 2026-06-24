@@ -22,7 +22,7 @@ class DistributedLaunchTest : FunSpec({
     fun run(client: RecordingReportPortalClient, params: ListenerParameters) {
         val extension = ReportPortalExtension(reportPortal(client, params), RpConfig())
         val projectConfig = object : AbstractProjectConfig() {
-            override fun extensions(): List<Extension> = listOf(extension)
+            override val extensions: List<Extension> = listOf(extension)
         }
         TestEngineLauncher().withProjectConfig(projectConfig).withClasses(SampleSpec::class).launch()
     }

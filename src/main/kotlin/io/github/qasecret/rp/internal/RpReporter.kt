@@ -13,8 +13,8 @@ import com.epam.ta.reportportal.ws.model.log.SaveLogRQ
 import io.github.qasecret.rp.RpConfig
 import io.kotest.core.spec.Spec
 import io.kotest.core.test.TestCase
-import io.kotest.core.test.TestResult
 import io.kotest.core.test.TestType
+import io.kotest.engine.test.TestResult
 import io.reactivex.Maybe
 import org.slf4j.LoggerFactory
 import java.util.Date
@@ -48,20 +48,23 @@ internal class RpReporter(
     private val itemIds = ConcurrentHashMap<String, Maybe<String>>()
 
     /**
-     * Data-driven (`withData`) nodes are [TestType.Dynamic]: Kotest only reveals whether such a node
-     * is a leaf or a container once its block runs. We defer creating its ReportPortal item until we
-     * know — as a SUITE if it gets children (so the real tests roll up into launch statistics), or as a
-     * leaf at finish if it never does. This holds the deferred nodes between `startTest` and the moment
-     * their role is resolved.
+     * Container nodes whose RP item is deferred until we know if they actually have children. Kotest 6
+     * types every `withData` data row as [TestType.Container] — including a row whose block only asserts
+     * (no nested tests), which is really a *leaf*. We can't tell the two apart at `beforeTest`, so we
+     * park containers here and create the RP item lazily: as a SUITE the moment a child appears (so the
+     * real tests roll up into launch statistics), or as a leaf at finish if none ever does. Creating a
+     * childless `withData` row eagerly as a SUITE would leave an empty suite that contributes no pass/
+     * fail counts; creating one eagerly as a leaf would force any later children to nest under a STEP
+     * (which RP never rolls up). Deferral resolves both.
      */
     private val pending = ConcurrentHashMap<String, TestCase>()
 
     /**
-     * Dynamic nodes that were still `pending` at their own `finishTest` (no executed child had
-     * materialized them). They might still own **ignored** children, which only `finishSpec` reports —
-     * and those must be able to promote the node to a SUITE. So we stash the result here and finish the
-     * node in `finishSpec`, *after* ignored children have had their chance to materialize it, rather
-     * than fixing it as a leaf prematurely (which would re-nest the skipped children under a STEP).
+     * Containers still `pending` at their own `finishTest` (no executed child materialized them). They
+     * might still own **ignored** children, reported via [reportIgnored] as they are encountered, which
+     * must be able to promote the node to a SUITE. So we stash the result here and finish the node in
+     * `finishSpec` (after ignored children have had their chance), rather than fixing it as a leaf
+     * prematurely (which would re-nest the skipped children under a STEP).
      */
     private val deferredFinish = ConcurrentHashMap<String, Pair<TestCase, TestResult>>()
 
@@ -151,14 +154,20 @@ internal class RpReporter(
         val key = RpMapper.testKey(testCase)
         if (itemIds.containsKey(key) || pending.containsKey(key)) return
         try {
-            // Defer Dynamic (`withData`) nodes: their role (leaf vs container) isn't known yet.
-            if (testCase.type == TestType.Dynamic) {
+            // Defer containers: a `TestType.Container` might be a real suite (it gets children) or a
+            // childless `withData` data row that is really a leaf. We can't tell yet, so park it and
+            // let the first child (or the finish) decide its RP item type. Leaf tests are unambiguous
+            // and created immediately.
+            if (testCase.type == TestType.Container) {
                 pending[key] = testCase
+                // Retain logs emitted from the container body before its item is materialized, so they
+                // aren't dropped (flushed onto the item when createItem registers its log context).
+                if (rp.client != null) RpLog.beginBuffering(key)
                 return
             }
             createItem(launch, testCase, key, RpMapper.itemType(testCase, config))
         } catch (e: Exception) {
-            logger.error("Failed to start test ${testCase.name.testName}", e)
+            logger.error("Failed to start test ${testCase.name.name}", e)
         }
     }
 
@@ -167,10 +176,11 @@ internal class RpReporter(
         val key = RpMapper.testKey(testCase)
         val itemId = itemIds[key]
         if (itemId == null) {
-            // beforeTest never fires for ignored tests (reported from finishSpec). A Dynamic node still
-            // in `pending` here had no *executed* children, but may still own *ignored* ones that
-            // finishSpec reports; those need to promote it to a SUITE. Defer its finish to finishSpec
-            // rather than fixing it as a leaf now (which would re-nest the skipped children under a STEP).
+            // A container still in `pending` here had no *executed* children, but may still own
+            // *ignored* ones (reported via reportIgnored) that must promote it to a SUITE. Defer its
+            // finish to finishSpec rather than fixing it as a leaf now (which would re-nest the skipped
+            // children under a STEP). beforeTest never fires for ignored tests, so a missing,
+            // non-pending key is simply nothing to finish.
             if (pending.containsKey(key)) deferredFinish[key] = testCase to result
             return
         }
@@ -205,35 +215,47 @@ internal class RpReporter(
             }
             launch.finishTestItem(itemId, rq)
         } catch (e: Exception) {
-            logger.error("Failed to finish test ${testCase.name.testName}", e)
+            logger.error("Failed to finish test ${testCase.name.name}", e)
         }
     }
 
     /**
      * Logs a per-invocation marker onto the test item for multi-invocation (flaky-detection) tests.
-     * Kotest 5.9 exposes no per-invocation result, so this records how many of N repetitions ran
+     * Kotest exposes no per-invocation result, so this records how many of N repetitions ran
      * (the last marker before a failure indicates which invocation was flaky).
      */
     fun logInvocation(testCase: TestCase, invocation: Int) {
-        if (disabled.get() || testCase.config.invocations <= 1) return
+        val invocations = testCase.config?.invocations ?: 1
+        if (disabled.get() || invocations <= 1) return
         val itemId = itemIds[RpMapper.testKey(testCase)] ?: return
-        sendLog(itemId, "Invocation ${invocation + 1} of ${testCase.config.invocations}", LogLevel.INFO)
+        sendLog(itemId, "Invocation ${invocation + 1} of $invocations", LogLevel.INFO)
+    }
+
+    /**
+     * Reports a Kotest test that was disabled/ignored as a SKIPPED item. Kotest 6 delivers these
+     * through the dedicated [io.kotest.core.listeners.IgnoredTestListener] (they no longer appear in
+     * `finalizeSpec`'s results map nor fire `afterTest`/`beforeTest`), so [ReportPortalExtension] wires
+     * this from `ignoredTest`. Reporting an ignored child of a deferred `withData` container promotes
+     * that container to a SUITE (via `resolveParent`), keeping the invariant that nothing nests under a
+     * leaf STEP. No-op when [RpConfig.reportIgnored] is disabled.
+     */
+    fun reportIgnored(testCase: TestCase, reason: String?) {
+        if (!config.reportIgnored) return
+        val launch = activeLaunch() ?: return
+        try {
+            // reportSkipped's `reported.add` is the single, atomic once-only guard.
+            reportSkipped(launch, testCase, reason)
+        } catch (e: Exception) {
+            logger.error("Failed to report ignored test ${testCase.name.name}", e)
+        }
     }
 
     fun finishSpec(kclass: KClass<out Spec>, results: Map<TestCase, TestResult>) {
         val launch = activeLaunch() ?: return
         try {
-            if (config.reportIgnored) {
-                results.forEach { (testCase, result) ->
-                    if (result is TestResult.Ignored && RpMapper.testKey(testCase) !in reported) {
-                        reportSkipped(launch, testCase, result)
-                    }
-                }
-            }
-
-            // Finish Dynamic nodes deferred from finishTest. Ignored children (reported above) have by
-            // now materialized any container node as a SUITE via resolveParent; whatever is still
-            // pending genuinely had no children and is materialized as a real leaf.
+            // Finish any container deferred at finishTest. Ignored children (reported eagerly via
+            // reportIgnored) have by now promoted real container nodes to SUITEs; whatever is still
+            // only pending genuinely had no children and is materialized here as a real leaf.
             finishDeferred(launch)
 
             val specKey = RpMapper.specKey(kclass)
@@ -284,9 +306,8 @@ internal class RpReporter(
 
     /**
      * Creates the ReportPortal item for [testCase] under [key] with the given [type], records it, and
-     * registers its log context. Idempotent and safe under concurrent children (e.g. concurrent leaves
-     * materializing the same deferred Dynamic parent): the parent is resolved before locking, then a
-     * double-checked put guarantees a single creation per key.
+     * registers its log context. Idempotent and safe under concurrent children: the parent is resolved
+     * before locking, then a double-checked put guarantees a single creation per key.
      */
     private fun createItem(launch: Launch, testCase: TestCase, key: String, type: String): Maybe<String> {
         itemIds[key]?.let { return it }
@@ -299,7 +320,7 @@ internal class RpReporter(
             attributes = RpMapper.testAttributes(testCase)
             isHasStats = true
         }
-        // Resolve the parent (which may itself materialize a pending ancestor) outside the lock.
+        // Resolve the parent outside the lock (it may itself create an ancestor item on demand).
         val parent = resolveParent(launch, testCase)
         synchronized(itemIds) {
             itemIds[key]?.let { return it }
@@ -312,10 +333,9 @@ internal class RpReporter(
     }
 
     /**
-     * Finishes the Dynamic nodes deferred at [finishTest]. By call time, ignored children have already
+     * Finishes the containers deferred at [finishTest]. By call time, ignored children have already
      * promoted container nodes to SUITEs (in `itemIds`); a node still only in `pending` had no children
-     * at all and is materialized here as a leaf. Children are finished before their parent because
-     * `reportSkipped` runs first.
+     * at all and is materialized here as a leaf.
      */
     private fun finishDeferred(launch: Launch) {
         deferredFinish.forEach { (key, deferred) ->
@@ -326,7 +346,7 @@ internal class RpReporter(
         deferredFinish.clear()
     }
 
-    private fun reportSkipped(launch: Launch, testCase: TestCase, result: TestResult.Ignored) {
+    private fun reportSkipped(launch: Launch, testCase: TestCase, reason: String?) {
         val key = RpMapper.testKey(testCase)
         if (!reported.add(key)) return
         val id = createItem(launch, testCase, key, RpMapper.leafType(config))
@@ -335,19 +355,18 @@ internal class RpReporter(
             FinishTestItemRQ().apply {
                 endTime = now()
                 status = ItemStatus.SKIPPED.name
-                description = result.reason
+                description = reason
             },
         )
     }
 
     private fun resolveParent(launch: Launch, testCase: TestCase): Maybe<String>? {
         val parentKey = RpMapper.parentKey(testCase)
-        if (parentKey != null) {
-            itemIds[parentKey]?.let { return it }
-            // The parent is a deferred Dynamic node that has now produced a child, so it is a container:
-            // materialize it as a SUITE before nesting this child under it.
-            pending[parentKey]?.let { return createItem(launch, it, parentKey, "SUITE") }
-        }
+        itemIds[parentKey]?.let { return it }
+        // The parent is a deferred container that has now produced a child, so it is a real suite:
+        // materialize it as a SUITE before nesting this child under it.
+        pending[parentKey]?.let { return createItem(launch, it, parentKey, "SUITE") }
+        // Defensive fallback (parent not yet recorded): nest under the spec, else the root suite.
         return itemIds[RpMapper.specKey(testCase.spec)] ?: rootSuiteId.get()
     }
 

@@ -9,11 +9,12 @@ import io.kotest.core.listeners.AfterTestListener
 import io.kotest.core.listeners.BeforeInvocationListener
 import io.kotest.core.listeners.BeforeTestListener
 import io.kotest.core.listeners.FinalizeSpecListener
+import io.kotest.core.listeners.IgnoredTestListener
 import io.kotest.core.listeners.PrepareSpecListener
 import io.kotest.core.listeners.ProjectListener
 import io.kotest.core.spec.Spec
 import io.kotest.core.test.TestCase
-import io.kotest.core.test.TestResult
+import io.kotest.engine.test.TestResult
 import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import kotlin.reflect.KClass
@@ -38,7 +39,7 @@ import kotlin.reflect.KClass
 class ReportPortalExtension internal constructor(
     private val reporter: RpReporter,
 ) : ProjectListener, PrepareSpecListener, BeforeTestListener, AfterTestListener, FinalizeSpecListener,
-    BeforeInvocationListener, TestCaseExtension {
+    BeforeInvocationListener, IgnoredTestListener, TestCaseExtension {
 
     /** Reports to ReportPortal using configuration resolved from properties/environment. */
     constructor() : this(RpConfig())
@@ -50,23 +51,23 @@ class ReportPortalExtension internal constructor(
     constructor(reportPortal: ReportPortal, config: RpConfig = RpConfig()) :
         this(RpReporter(reportPortal, config))
 
-    @Suppress("OVERRIDE_DEPRECATION")
-    override val name: String = "ReportPortalExtension"
-
     override suspend fun beforeProject() = guard { reporter.startLaunch() }
 
     override suspend fun prepareSpec(kclass: KClass<out Spec>) = guard { reporter.startSpec(kclass) }
 
     override suspend fun beforeTest(testCase: TestCase) = guard { reporter.startTest(testCase) }
 
-    override suspend fun beforeInvocation(testCase: TestCase, invocation: Int) =
-        guard { reporter.logInvocation(testCase, invocation) }
+    override suspend fun beforeInvocation(testCase: TestCase, iteration: Int) =
+        guard { reporter.logInvocation(testCase, iteration) }
 
     override suspend fun afterTest(testCase: TestCase, result: TestResult) =
         guard { reporter.finishTest(testCase, result) }
 
     override suspend fun finalizeSpec(kclass: KClass<out Spec>, results: Map<TestCase, TestResult>) =
         guard { reporter.finishSpec(kclass, results) }
+
+    override suspend fun ignoredTest(testCase: TestCase, reason: String?) =
+        guard { reporter.reportIgnored(testCase, reason) }
 
     override suspend fun afterProject() = guard { reporter.finishLaunch() }
 

@@ -6,6 +6,7 @@ import io.kotest.core.config.AbstractProjectConfig
 import io.kotest.core.extensions.Extension
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.engine.TestEngineLauncher
+import io.kotest.engine.concurrency.TestExecutionMode
 import io.kotest.matchers.shouldBe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -23,7 +24,11 @@ class ConcurrentLoggingTest : FunSpec({
         val client = RecordingReportPortalClient()
         val extension = ReportPortalExtension(reportPortal(client), RpConfig())
         val projectConfig = object : AbstractProjectConfig() {
-            override fun extensions(): List<Extension> = listOf(extension)
+            override val extensions: List<Extension> = listOf(extension)
+            // Kotest 6 replaced the spec-level `concurrency`/`dispatcherAffinity` toggles with a
+            // project-level execution mode. Concurrent runs the spec's tests on a shared dispatcher
+            // pool so they interleave (and hop threads), which is exactly what this test exercises.
+            override val testExecutionMode: TestExecutionMode = TestExecutionMode.Concurrent
         }
 
         TestEngineLauncher().withProjectConfig(projectConfig).withClasses(ConcurrentSpec::class).launch()
@@ -44,11 +49,5 @@ class ConcurrentLoggingTest : FunSpec({
                 }
             }
         }
-    }) {
-        @OptIn(io.kotest.common.ExperimentalKotest::class)
-        override fun concurrency(): Int = 6
-
-        @OptIn(io.kotest.common.ExperimentalKotest::class)
-        override fun dispatcherAffinity(): Boolean = false
-    }
+    })
 }

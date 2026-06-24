@@ -20,7 +20,7 @@ class InvocationsTest : FunSpec({
         val client = RecordingReportPortalClient()
         val extension = ReportPortalExtension(reportPortal(client), RpConfig())
         val projectConfig = object : AbstractProjectConfig() {
-            override fun extensions(): List<Extension> = listOf(extension)
+            override val extensions: List<Extension> = listOf(extension)
         }
 
         TestEngineLauncher().withProjectConfig(projectConfig).withClasses(InvocationsSpec::class).launch()

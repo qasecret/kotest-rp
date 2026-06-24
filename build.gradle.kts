@@ -1,7 +1,7 @@
 import com.vanniktech.maven.publish.SonatypeHost
 
 plugins {
-    kotlin("jvm") version "2.0.0"
+    kotlin("jvm") version "2.2.21"
     id("com.vanniktech.maven.publish") version "0.30.0"
 }
 
@@ -14,7 +14,7 @@ version = run {
         ?.takeIf { it.startsWith("refs/tags/") }
         ?.substringAfterLast('/')
         ?.removePrefix("v")
-    explicit ?: fromTag ?: "1.2.1-SNAPSHOT"
+    explicit ?: fromTag ?: "2.0.0-SNAPSHOT"
 }
 
 repositories {
@@ -31,7 +31,8 @@ dependencies {
     implementation("org.slf4j:slf4j-api:2.0.16")
 
     // Kotest is provided by the consumer (this is a Kotest extension); compile against it only.
-    compileOnly("io.kotest:kotest-framework-api:$kotestVersion")
+    // Kotest 6 folded the former `kotest-framework-api` module into `kotest-framework-engine`,
+    // so the engine artifact now carries the listener/extension API we compile against.
     compileOnly("io.kotest:kotest-framework-engine-jvm:$kotestVersion")
 
     // logback is needed ONLY to compile the optional bundled appender (ReportPortalLogbackAppender).
@@ -40,11 +41,10 @@ dependencies {
     compileOnly("ch.qos.logback:logback-classic:1.5.15")
 
     // Tests run the real Kotest engine and assert against a recording ReportPortal client.
-    testImplementation("io.kotest:kotest-framework-api:$kotestVersion")
+    // In Kotest 6 the datatest (`withData`) helpers ship inside the engine module too.
     testImplementation("io.kotest:kotest-framework-engine-jvm:$kotestVersion")
     testImplementation("io.kotest:kotest-assertions-core:$kotestVersion")
     testImplementation("io.kotest:kotest-runner-junit5-jvm:$kotestVersion")
-    testImplementation("io.kotest:kotest-framework-datatest:$kotestVersion")
     // Needed only to implement the ReportPortalClient.log(List<MultipartBody.Part>) member in the
     // recording test fake; the type comes transitively from client-java at runtime.
     testImplementation("com.squareup.okhttp3:okhttp:4.12.0")
@@ -94,6 +94,17 @@ tasks.processResources {
 
 tasks.test {
     useJUnitPlatform()
+    // The sample specs that the engine tests drive are NESTED classes of the `*Test` classes (e.g.
+    // `ReportPortalExtensionEngineTest$FailingSpec`). Kotest 6's JUnit-platform discovery scans for
+    // every concrete Spec subclass regardless of nesting/visibility (Kotest 5 left nested ones alone),
+    // so without this filter those fixtures — several of which fail or skip on purpose — run directly
+    // and pollute the build. The pattern is anchored to the `Test$` nesting boundary (not a bare `$`)
+    // so it targets only specs nested inside a `*Test` class and never matches a real test whose own
+    // name happens to contain `$`. The in-test `TestEngineLauncher` (a separate engine instance) still
+    // launches these fixtures explicitly, unaffected by this post-discovery filter.
+    filter {
+        excludeTestsMatching("*Test\$*")
+    }
     // Forward rp.* system properties (e.g. rp.live, rp.shard.*) to the forked test JVM so the
     // opt-in live ReportPortal smoke tests can be driven from the Gradle command line.
     System.getProperties().forEach { (k, v) ->
@@ -102,4 +113,10 @@ tasks.test {
 }
 kotlin {
     jvmToolchain(17)
+}
+
+// Kotest 6 marks `TestEngineLauncher` (the in-process engine driver the tests use) `@KotestInternal`.
+// It remains the supported way to run the engine from a test, so opt in for the test sources only.
+tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>("compileTestKotlin") {
+    compilerOptions.optIn.add("io.kotest.common.KotestInternal")
 }
