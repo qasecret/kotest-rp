@@ -20,13 +20,17 @@ mirrors your specs exactly — at any nesting depth, for every Kotest spec style
 
 ```kotlin
 class ProjectConfig : AbstractProjectConfig() {
-    override fun extensions() = listOf(ReportPortalExtension())
+    override val extensions = listOf(ReportPortalExtension())
 }
 ```
 
 That's the whole integration. Connection settings come from a `reportportal.properties` file or
 `rp.*` env vars — no code changes to wire up CI, and reporting is **non-fatal**, so a flaky
 ReportPortal server can never break your build.
+
+> **Kotest 6 / Kotest 5?** `kotest-rp` **2.x** targets **Kotest 6** (`6.1.x`, Kotlin 2.2+) — and
+> registration is `override val extensions` (a property, not a function). Still on **Kotest 5**? Use
+> `kotest-rp` **1.2.x** with `override fun extensions()`. See [Compatibility](#compatibility).
 
 ## Table of contents
 
@@ -58,16 +62,24 @@ ReportPortal server can never break your build.
 
 ## Install
 
-`kotest-rp` is a **test-time** dependency. Use the latest version from the badge above.
+`kotest-rp` is a **test-time** dependency. Use the latest version from the badge above. Version **2.x**
+requires **Kotest 6** (`6.1.x`) and **Kotlin 2.2+**.
 
 <details open>
 <summary><b>Gradle (Kotlin DSL)</b></summary>
 
 ```kotlin
+val kotestVersion = "6.1.4"
+
 dependencies {
     testImplementation("io.github.qasecret:kotest-rp:<version>")
-    // Already have these if you use Kotest; shown for completeness:
-    testImplementation("io.kotest:kotest-runner-junit5:6.1.4")
+
+    // Kotest is `compileOnly` in kotest-rp, so the consumer provides it. The runner pulls in the
+    // engine (which in Kotest 6 also contains the `withData` datatest helpers — no separate
+    // `kotest-framework-datatest` artifact anymore); add assertions if you use the matchers.
+    testImplementation("io.kotest:kotest-runner-junit5:$kotestVersion")
+    testImplementation("io.kotest:kotest-assertions-core:$kotestVersion")
+
     // Pick any SLF4J backend (kotest-rp ships none):
     testRuntimeOnly("ch.qos.logback:logback-classic:1.5.6")
 }
@@ -78,8 +90,12 @@ dependencies {
 <summary><b>Gradle (Groovy DSL)</b></summary>
 
 ```groovy
+def kotestVersion = '6.1.4'
+
 dependencies {
     testImplementation 'io.github.qasecret:kotest-rp:<version>'
+    testImplementation "io.kotest:kotest-runner-junit5:$kotestVersion"
+    testImplementation "io.kotest:kotest-assertions-core:$kotestVersion"
     testRuntimeOnly 'ch.qos.logback:logback-classic:1.5.6'
 }
 ```
@@ -110,9 +126,12 @@ import io.github.qasecret.rp.ReportPortalExtension
 import io.kotest.core.config.AbstractProjectConfig
 
 class ProjectConfig : AbstractProjectConfig() {
-    override fun extensions() = listOf(ReportPortalExtension())
+    override val extensions = listOf(ReportPortalExtension())
 }
 ```
+
+> In Kotest 6 `extensions` is a **property** (`override val extensions = …`). On Kotest 5 (kotest-rp
+> 1.2.x) it's the function form `override fun extensions() = …`.
 
 ### 2. Provide connection settings
 
@@ -200,8 +219,9 @@ class MySpec : BehaviorSpec({
 ```
 
 Attribution is **concurrency- and thread-hop-safe**: each test's item key rides its coroutine via
-SLF4J `MDC`, so logs land on the right test even with `concurrency > 1` or
-`withContext(Dispatchers.IO)`. (`DEBUG` lines appear only if your root/logger level allows them.)
+SLF4J `MDC`, so logs land on the right test even under concurrent execution
+(`TestExecutionMode.Concurrent` in Kotest 6) or a `withContext(Dispatchers.IO)` thread hop.
+(`DEBUG` lines appear only if your root/logger level allows them.)
 
 > **Using log4j2 or another backend?** kotest-rp publishes the current test's item key to SLF4J `MDC`
 > under [`RpMdc.ITEM_KEY`](src/main/kotlin/io/github/qasecret/rp/RpMdc.kt). Write a small appender that
@@ -253,6 +273,8 @@ defect type (**To Investigate** by default). Customize per failure — e.g. asse
 *Product Bug*, exceptions → *Automation Bug*:
 
 ```kotlin
+import io.kotest.engine.test.TestResult   // Kotest 6 (was io.kotest.core.test.TestResult in Kotest 5)
+
 RpConfig(
     defectTypeResolver = { _, result ->
         if (result is TestResult.Failure) RpDefect.PRODUCT_BUG else RpDefect.AUTOMATION_BUG
@@ -272,7 +294,7 @@ works too.
 Pass an [`RpConfig`](src/main/kotlin/io/github/qasecret/rp/RpConfig.kt) to the extension:
 
 ```kotlin
-override fun extensions() = listOf(
+override val extensions = listOf(
     ReportPortalExtension(
         RpConfig(
             leafItemType = LeafItemType.STEP,
@@ -316,14 +338,23 @@ You can also inject a pre-built `ReportPortal` instance: `ReportPortalExtension(
 | **`DEBUG` lines missing** | Expected — raise the root or a specific logger to `DEBUG` in your logback config. |
 | **Defect badge missing on a leaf** | You set `leafItemType = TEST`; defects render on `STEP` leaves only. |
 | **Container (`Given`/`When`) logs not where you look** | They attach to the **suite** node, not the leaf — open that suite row to see them (this is the faithful-tree trade-off). |
+| **A spec where *every* test is disabled shows no individual `SKIPPED` items** | Kotest 6 skips such a spec wholesale at the spec level, so the **spec** is reported as a `SKIPPED` suite but its tests aren't itemized (the engine exposes no per-test signal for them). A spec with at least one enabled test reports its disabled tests normally. |
 
 ## Compatibility
 
 | | |
 |---|---|
-| **Kotest** | 6.1.x |
+| **kotest-rp 2.x** | **Kotest 6** (`6.1.x`), **Kotlin 2.2+** |
+| **kotest-rp 1.2.x** | Kotest 5 (`5.9.x`) |
 | **JVM** | 17+ |
 | **ReportPortal** | client-java 5.2.x (server v5) |
+
+> **Upgrading from kotest-rp 1.x (Kotest 5 → 6)?** Bump `kotest-rp` to `2.x` and Kotest to `6.1.x`
+> (Kotlin 2.2+), drop any `kotest-framework-datatest` dependency (it's now part of
+> `kotest-framework-engine`), and change extension registration from `override fun extensions() = …`
+> to `override val extensions = …`. If you use `defectTypeResolver`/`TestResult`, update the import to
+> `io.kotest.engine.test.TestResult`. No other source changes are needed — the reporting behavior,
+> config, and logging API are unchanged.
 
 ## Contributing & building
 
@@ -350,10 +381,10 @@ Publishing to Maven Central is **automatic and tag-driven**:
 
 1. Push a version tag:
    ```bash
-   git tag v1.2.0 && git push origin v1.2.0
+   git tag v2.0.0 && git push origin v2.0.0
    ```
 2. The `Publish` workflow builds, signs, uploads, **and releases** that version
-   (`publishAndReleaseToMavenCentral`). The version comes from the tag (`v1.2.0` → `1.2.0`); local and
+   (`publishAndReleaseToMavenCentral`). The version comes from the tag (`v2.0.0` → `2.0.0`); local and
    non-tag builds use a `-SNAPSHOT` version. You can also trigger it manually (Actions → *Publish* →
    *Run workflow*) with an explicit version.
 
