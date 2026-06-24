@@ -43,3 +43,5 @@ bin/
 
 ### ReportPortal — never commit the real properties (contains the API key) ###
 src/test/resources/reportportal.properties
+# Local Claude Code guidance — not published
+CLAUDE.md
