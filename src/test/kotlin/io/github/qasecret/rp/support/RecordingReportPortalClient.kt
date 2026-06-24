@@ -21,6 +21,7 @@ import com.epam.ta.reportportal.ws.model.log.SaveLogRQ
 import com.epam.ta.reportportal.ws.model.project.config.ProjectSettingsResource
 import io.reactivex.Maybe
 import okhttp3.MultipartBody
+import okio.Buffer
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -39,6 +40,14 @@ class RecordingReportPortalClient : ReportPortalClient {
     val finishedItems = CopyOnWriteArrayList<FinishedItem>()
     val logs = CopyOnWriteArrayList<SaveLogRQ>()
     val finishedLaunches = CopyOnWriteArrayList<String>()
+
+    /**
+     * Each multipart log batch the launch flushes (file attachments go through this channel, not the
+     * plain [log] above), rendered to its raw body text. The JSON metadata part carries the SaveLogRQ
+     * (item UUID, message, file name); the binary part carries the file bytes — so a single rendered
+     * string contains all of them and tests can assert on it without parsing multipart structure.
+     */
+    val multipartBatches = CopyOnWriteArrayList<String>()
 
     private val counter = AtomicInteger()
 
@@ -73,8 +82,13 @@ class RecordingReportPortalClient : ReportPortalClient {
         return Maybe.just(EntryCreatedAsyncRS("log-${counter.incrementAndGet()}"))
     }
 
-    override fun log(parts: MutableList<MultipartBody.Part>): Maybe<BatchSaveOperatingRS> =
-        Maybe.just(BatchSaveOperatingRS())
+    override fun log(parts: MutableList<MultipartBody.Part>): Maybe<BatchSaveOperatingRS> {
+        val rendered = parts.joinToString("\n") { part ->
+            Buffer().also { part.body.writeTo(it) }.readUtf8()
+        }
+        multipartBatches.add(rendered)
+        return Maybe.just(BatchSaveOperatingRS())
+    }
 
     // Unused by this extension — return well-formed empty/no-op responses.
     override fun getApiInfo(): Maybe<ApiInfo> = Maybe.just(ApiInfo())
