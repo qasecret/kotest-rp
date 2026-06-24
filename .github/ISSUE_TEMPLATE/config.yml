@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / usage help
+    url: https://github.com/qasecret/kotest-rp/blob/main/README.md
+    about: Check the README first — install, configuration reference, logging, and troubleshooting.
+  - name: ReportPortal documentation
+    url: https://reportportal.io/docs
+    about: For questions about ReportPortal itself (server setup, the UI, the API).
+  - name: Kotest documentation
+    url: https://kotest.io
+    about: For questions about Kotest specs, config, and the test engine.
