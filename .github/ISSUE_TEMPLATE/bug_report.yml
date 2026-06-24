@@ -1,0 +1,60 @@
+name: Bug report
+description: Report something that isn't working as expected in kotest-rp.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a report! Please fill in as much as you can — a minimal
+        reproducing spec is the single most helpful thing.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including what you expected to happen instead.
+      placeholder: "When I run a `withData` spec, the data rows are reported as STEPs instead of SUITEs…"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Ideally a minimal Kotest spec + the relevant `RpConfig` / `reportportal.properties`.
+      placeholder: |
+        ```kotlin
+        class MySpec : FunSpec({ ... })
+        ```
+      render: markdown
+    validations:
+      required: true
+  - type: input
+    id: kotest-rp-version
+    attributes:
+      label: kotest-rp version
+      placeholder: "2.0.0"
+    validations:
+      required: true
+  - type: input
+    id: kotest-version
+    attributes:
+      label: Kotest version
+      placeholder: "6.1.4"
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: JDK, build tool, and ReportPortal server/client versions if relevant.
+      placeholder: "JDK 17, Gradle 8.5, ReportPortal server v5 / client-java 5.2.23"
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / output
+      description: Any relevant stack traces or the single warning kotest-rp logs when it can't start.
+      render: shell
+    validations:
+      required: false
