@@ -1,8 +1,6 @@
-import com.vanniktech.maven.publish.SonatypeHost
-
 plugins {
-    kotlin("jvm") version "2.2.21"
-    id("com.vanniktech.maven.publish") version "0.30.0"
+    kotlin("jvm") version "2.4.0"
+    id("com.vanniktech.maven.publish") version "0.37.0"
 }
 
 group = "io.github.qasecret"
@@ -38,7 +36,7 @@ dependencies {
     // logback is needed ONLY to compile the optional bundled appender (ReportPortalLogbackAppender).
     // compileOnly keeps the policy intact: no logging backend is shipped — consumers using logback
     // already have it; consumers on another backend simply never reference the appender class.
-    compileOnly("ch.qos.logback:logback-classic:1.5.15")
+    compileOnly("ch.qos.logback:logback-classic:1.5.35")
 
     // Tests run the real Kotest engine and assert against a recording ReportPortal client.
     // In Kotest 6 the datatest (`withData`) helpers ship inside the engine module too.
@@ -47,12 +45,12 @@ dependencies {
     testImplementation("io.kotest:kotest-runner-junit5-jvm:$kotestVersion")
     // Needed only to implement the ReportPortalClient.log(List<MultipartBody.Part>) member in the
     // recording test fake; the type comes transitively from client-java at runtime.
-    testImplementation("com.squareup.okhttp3:okhttp:4.12.0")
+    testImplementation("com.squareup.okhttp3:okhttp:5.4.0")
     // logback on the test compile classpath so the appender + concurrency logging tests can use it.
-    testImplementation("ch.qos.logback:logback-classic:1.5.15")
+    testImplementation("ch.qos.logback:logback-classic:1.5.35")
 }
 mavenPublishing {
-    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
+    publishToMavenCentral()
 
     signAllPublications()
 
