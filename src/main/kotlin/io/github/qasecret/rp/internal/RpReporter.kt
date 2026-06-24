@@ -327,7 +327,7 @@ internal class RpReporter(
             val id = if (parent != null) launch.startTestItem(parent, rq) else launch.startTestItem(rq)
             itemIds[key] = id
             pending.remove(key)
-            rp.client?.let { RpLog.register(key, RpLogContext(it, launchUuidRef.get(), id, rp.parameters)) }
+            rp.client?.let { RpLog.register(key, RpLogContext(it, launch, launchUuidRef.get(), id)) }
             return id
         }
     }

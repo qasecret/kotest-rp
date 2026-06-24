@@ -1,14 +1,11 @@
 package io.github.qasecret.rp.internal
 
-import com.epam.reportportal.listeners.ListenerParameters
 import com.epam.reportportal.listeners.LogLevel
-import com.epam.reportportal.service.LoggingContext
-import com.epam.reportportal.service.ReportPortal
+import com.epam.reportportal.service.Launch
 import com.epam.reportportal.service.ReportPortalClient
 import com.epam.ta.reportportal.ws.model.log.SaveLogRQ
 import io.github.qasecret.rp.RpMdc
 import io.reactivex.Maybe
-import io.reactivex.schedulers.Schedulers
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import java.util.Date
@@ -17,9 +14,9 @@ import java.util.concurrent.ConcurrentHashMap
 /** Everything needed to send a log bound to one ReportPortal item. */
 internal class RpLogContext(
     val client: ReportPortalClient,
+    val launch: Launch,
     val launchUuid: Maybe<String>?,
     val itemId: Maybe<String>,
-    val params: ListenerParameters,
 )
 
 /**
@@ -30,8 +27,9 @@ internal class RpLogContext(
  * The current item is resolved by the test's item key, which [ReportPortalExtension] publishes to
  * SLF4J [MDC] ([RpMdc.ITEM_KEY]) via [RpItemContextElement]. Because the key rides the test coroutine,
  * resolution stays correct across coroutine thread-hops and under concurrent execution. Emission of
- * binary (multipart) attachments goes through a per-call [LoggingContext] on the calling thread, which
- * is the supported path and is correct because the call happens on the test-body thread.
+ * binary (multipart) attachments goes through [Launch.log] with the item UUID passed explicitly, so it
+ * never depends on ReportPortal's thread-local `LoggingContext`/`Launch.currentLaunch()` (unset on the
+ * test-body thread) — keeping attribution correct under coroutine thread-hops and concurrency.
  */
 internal object RpLog {
 
@@ -121,23 +119,21 @@ internal object RpLog {
     }
 
     /**
-     * File attachment: binaries must be uploaded via ReportPortal's multipart path, which goes through
-     * a [LoggingContext]. Safe here because this runs on the test-body thread for the current item.
+     * File attachment: binaries must be uploaded via ReportPortal's multipart path. In client-java 5.4
+     * that path is [Launch.log] with an explicit item UUID; the launch batches the request and flushes
+     * it on `launch.finish()`. We pass [RpLogContext.itemId] directly rather than relying on the
+     * thread-local `Launch.currentLaunch()` that `LoggingContext.emit` consults — that thread-local is
+     * not set on Kotest's test-body thread, so it would silently drop the attachment.
      */
     private fun emitAttachment(ctx: RpLogContext, level: LogLevel, message: String, file: SaveLogRQ.File, time: Date) {
-        LoggingContext.init(ctx.launchUuid ?: Maybe.empty(), ctx.itemId, ctx.client, Schedulers.io(), ctx.params)
-        try {
-            ReportPortal.emitLog { itemUuid ->
-                SaveLogRQ().apply {
-                    this.itemUuid = itemUuid
-                    this.message = message
-                    this.level = level.name
-                    logTime = time
-                    this.file = file
-                }
+        ctx.launch.log(ctx.itemId) { itemUuid ->
+            SaveLogRQ().apply {
+                this.itemUuid = itemUuid
+                this.message = message
+                this.level = level.name
+                logTime = time
+                this.file = file
             }
-        } finally {
-            LoggingContext.complete().blockingAwait()
         }
     }
 }

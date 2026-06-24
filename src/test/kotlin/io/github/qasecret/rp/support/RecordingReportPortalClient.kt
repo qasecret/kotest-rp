@@ -3,6 +3,7 @@ package io.github.qasecret.rp.support
 import com.epam.reportportal.listeners.ListenerParameters
 import com.epam.reportportal.service.ReportPortal
 import com.epam.reportportal.service.ReportPortalClient
+import com.epam.ta.reportportal.ws.model.ApiInfo
 import com.epam.ta.reportportal.ws.model.BatchSaveOperatingRS
 import com.epam.ta.reportportal.ws.model.EntryCreatedAsyncRS
 import com.epam.ta.reportportal.ws.model.FinishExecutionRQ
@@ -76,6 +77,7 @@ class RecordingReportPortalClient : ReportPortalClient {
         Maybe.just(BatchSaveOperatingRS())
 
     // Unused by this extension — return well-formed empty/no-op responses.
+    override fun getApiInfo(): Maybe<ApiInfo> = Maybe.just(ApiInfo())
     override fun mergeLaunches(rq: MergeLaunchesRQ): Maybe<LaunchResource> = Maybe.just(LaunchResource())
     override fun updateLaunch(uuid: String, rq: UpdateLaunchRQ): Maybe<LaunchResource> = Maybe.just(LaunchResource())
     override fun getLaunchByUuid(uuid: String): Maybe<LaunchResource> = Maybe.just(LaunchResource())
