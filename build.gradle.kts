@@ -1,8 +1,6 @@
-import com.vanniktech.maven.publish.SonatypeHost
-
 plugins {
     kotlin("jvm") version "2.4.0"
-    id("com.vanniktech.maven.publish") version "0.30.0"
+    id("com.vanniktech.maven.publish") version "0.37.0"
 }
 
 group = "io.github.qasecret"
@@ -52,7 +50,7 @@ dependencies {
     testImplementation("ch.qos.logback:logback-classic:1.5.35")
 }
 mavenPublishing {
-    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
+    publishToMavenCentral()
 
     signAllPublications()
 
